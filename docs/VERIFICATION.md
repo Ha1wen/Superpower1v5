@@ -27,7 +27,7 @@ Diagnostic code remains excluded from production. The repository does not contai
 
 Evidence checked into this repository: [gameplay results](verification/native-gameplay.json), [rifle rewind](verification/rifle-rewind.json), and [regression results](verification/regression.json). The broad scenario's historical test label says "bot-fired lethal bullet" for a hit whose diagnostic damage type was actually `DMG_SLASH`; it verifies real bot weapon damage. The separate rifle scenario explicitly confirms `DMG_BULLET` and supplies the gunfire evidence.
 
-The final broad scenario used private PID 9560, the focused moving/rifle case PID 39700, and the regression run PID 37184. They completed gameplay checks and exited cleanly after plugin unload. Other exploratory isolated runs still reproduced the previously recorded Windows shutdown access violation. No live user server was terminated.
+The final broad scenario used private PID 9560, the focused moving/rifle case PID 39700, and the regression run PID 37184. All completed gameplay checks. The broad and moving/rifle cases exited cleanly after unload; the regression run and some exploratory runs reproduced the previously recorded Windows shutdown access violation after unload. No live user server was terminated.
 
 ## Remaining limits
 
@@ -42,3 +42,5 @@ Implementation references: [CounterStrikeSharp API source](https://github.com/ro
 ## Release
 
 The release manifest inside the install ZIP records the production DLL checksum. ConfigVersion 6 preserves unrelated settings while adding Juggernaut/Cluster Grenade, the three-second rewind and fixed T ownership. Deployment backs up the previous configuration.
+
+The live server confirmed **v1.6.0 with 18 powers loaded at 21:36:09 JST**. All unrelated existing power settings were compared with the backup and preserved. Production source/deployed DLL SHA256 match: `8B4086DB8A4106559604D5F6D944759EF2E96CC3E02BA4EBAF032104F9C43795`. The seven-file install ZIP was checked entry-by-entry against its staged source. The user's running dedicated server and CS2 client stayed running.
