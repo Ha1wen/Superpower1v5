@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Superpower1v5.Configuration;
 using Superpower1v5.GameMode;
 using Superpower1v5.Managers;
+using Superpower1v5.Support;
 
 namespace Superpower1v5;
 
@@ -12,9 +13,9 @@ namespace Superpower1v5;
 public sealed partial class Plugin : BasePlugin,IPluginConfig<PluginConfig>
 {
     public override string ModuleName => "Superpower 1v5";
-    public override string ModuleVersion => "1.5.0";
+    public override string ModuleVersion => "1.6.0";
     public override string ModuleAuthor => "Superpower1v5";
-    public override string ModuleDescription => "One rotating player, two random powers, up to five normal opponents.";
+    public override string ModuleDescription => "The chosen T player has two private powers against up to five CT opponents.";
     public const string Prefix = " \x04[SUPERPOWER]\x01 ";
     public PluginConfig Config { get; set; } = new();
     public ModeController Mode { get; private set; } = null!;
@@ -41,9 +42,23 @@ public sealed partial class Plugin : BasePlugin,IPluginConfig<PluginConfig>
             {
                 if (entity is null || info is null || entity.Handle==IntPtr.Zero || info.Handle==IntPtr.Zero) return HookResult.Continue;
                 if (Damage.Synthetic && entity.EntityHandle.Raw!=Damage.TargetPawn) return HookResult.Handled;
-                return entity.IsValid && entity.DesignerName=="player" ? BeforeDamage(entity.As<CCSPlayerPawn>(),info) : HookResult.Continue;
+                return HookResult.Continue;
             }
             catch (Exception e) { Fail(e); return HookResult.Continue; }
+        });
+        RegisterListener<Listeners.OnPlayerTakeDamagePre>((pawn,info)=> {
+            try { return pawn is { IsValid:true } && info is not null && info.Handle!=IntPtr.Zero ? BeforeDamage(pawn,info) : HookResult.Continue; }
+            catch (Exception e) { Fail(e); return HookResult.Continue; }
+        });
+        AddCommandListener("jointeam",(p,cmd)=> {
+            if (Config.Enabled && p is { IsValid:true } && cmd.ArgCount>1 && cmd.GetArg(1)=="2" && !Mode.CanJoinT(p))
+            { p.PrintToChat(Prefix+"T already has a boss. Join CT until the T slot is free."); return HookResult.Handled; }
+            return HookResult.Continue;
+        },HookMode.Pre);
+        RegisterListener<Listeners.OnEntitySpawned>(entity=> {
+            if (entity is not { IsValid:true } || !GrenadeFactory.Supported(entity.DesignerName)) return;
+            var raw=entity.EntityHandle.Raw;
+            Defer(()=> { if (Players.Entity<CBaseCSGrenadeProjectile>(raw) is { IsValid:true } projectile) Powers.Projectile(projectile); });
         });
         RegisterListener<Listeners.OnPlayerTakeDamagePost>((p,info,result)=>Guard(()=>AfterDamage(p,info,result)));
         RegisterListener<Listeners.CheckTransmit>(info=>Effects.FilterTransmission(info));

@@ -14,7 +14,7 @@ New-Item -ItemType Directory -Path $destination,$configDirectory -Force | Out-Nu
 $config=Join-Path $configDirectory 'Superpower1v5.json'
 if (!(Test-Path -LiteralPath $config)) { Copy-Item -LiteralPath (Join-Path $project 'Superpower1v5.example.json') -Destination $config }
 elseif ($MigrateConfig) {
-    $backup=$config+'.before-v5-'+(Get-Date -Format 'yyyyMMdd-HHmmss')+'.bak'
+    $backup=$config+'.before-v6-'+(Get-Date -Format 'yyyyMMdd-HHmmss')+'.bak'
     Copy-Item -LiteralPath $config -Destination $backup
     $sdk=$DotnetPath
     if (!$sdk) {
@@ -35,7 +35,7 @@ New-Item -ItemType Directory -Path $reportDirectory -Force | Out-Null
 $report=Join-Path $project 'artifacts\VERIFICATION.md'
 if (!(Test-Path -LiteralPath $report)) { $report=Join-Path $project 'docs\VERIFICATION.md' }
 if (Test-Path -LiteralPath $report) { Copy-Item -LiteralPath $report -Destination (Join-Path $reportDirectory 'VERIFICATION.md') -Force }
-$manifest=[ordered]@{ Plugin='Superpower1v5';Version='1.5.0';CounterStrikeSharpAPI=$installed.ToString();
+$manifest=[ordered]@{ Plugin='Superpower1v5';Version='1.6.0';CounterStrikeSharpAPI=$installed.ToString();
     SHA256=(Get-FileHash -LiteralPath (Join-Path $destination 'Superpower1v5.dll') -Algorithm SHA256).Hash;
     Source=$project;PluginDirectory=$destination;Config=$config }
 $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $destination 'installation.json') -Encoding UTF8

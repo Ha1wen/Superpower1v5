@@ -25,6 +25,7 @@ public sealed class PowerManager(Plugin plugin)
         "knockback" => new Knockback(), "second_chance" => new SecondChance(),
         "bhop" => new Bhop(), "tiny" => new Tiny(), "sandevistan" => new Sandevistan(),
         "pyromaniac" => new Pyromaniac(), "random_explosion" => new RandomKill(),
+        "juggernaut" => new Juggernaut(), "cluster_grenade" => new ClusterGrenade(),
         _ => throw new ArgumentException($"Unknown power: {id}")
     };
     public void Roll(bool newRound)
@@ -69,6 +70,8 @@ public sealed class PowerManager(Plugin plugin)
     { if (plugin.Mode.CanUsePowers) foreach (var p in _active.ToArray()) p.PostThink(_context); }
     public void Smoke(float x,float y,float z)
     { foreach (var p in _active.ToArray()) p.Smoke(_context,new(x,y,z)); }
+    public void Projectile(CBaseCSGrenadeProjectile entity)
+    { if (plugin.Mode.CanUsePowers) foreach (var power in _active.ToArray()) power.Projectile(_context,entity); }
     public bool BeforeDamage(DamageEvent hit)
     {
         foreach (var p in _active.ToArray()) p.ModifyDamage(_context,hit);

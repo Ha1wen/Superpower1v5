@@ -28,6 +28,8 @@ public sealed partial class Plugin
     {
         if (_probeStarted) return;
         _probeStarted=true;
+        Config.Powers["juggernaut"].Enabled=false;
+        Config.Powers["cluster_grenade"].Enabled=false;
         Logger.LogInformation("FEEDBACK PROBE authorized for isolated PID {Pid}; module={Module}",Environment.ProcessId,ModuleDirectory);
         Server.NextWorldUpdate(()=> {
             Server.ExecuteCommand("sv_hibernate_when_empty 0"); Server.ExecuteCommand("bot_join_after_player 0");
@@ -40,6 +42,10 @@ public sealed partial class Plugin
         { SchedulePersistentPowerTests(); return; }
         if (ProbeDirectory.Contains("random-kill-native",StringComparison.OrdinalIgnoreCase))
         { ScheduleRandomKillTests(); return; }
+        if (ProbeDirectory.Contains("team-powers-native",StringComparison.OrdinalIgnoreCase))
+        { ScheduleTeamPowerTests(); return; }
+        if (ProbeDirectory.Contains("rewind-gun-native",StringComparison.OrdinalIgnoreCase))
+        { ScheduleGunRewindProbe(); return; }
         AddTimer(12,NativeFeedbackProbe,TimerFlags.STOP_ON_MAPCHANGE);
         AddTimer(13,GravityPhysicsProbe,TimerFlags.STOP_ON_MAPCHANGE);
         AddTimer(16,()=> {
@@ -51,9 +57,9 @@ public sealed partial class Plugin
             Server.ExecuteCommand("mp_restartgame 1");
         },TimerFlags.STOP_ON_MAPCHANGE);
         AddTimer(21,()=> {
-            Probe("Next round rotates the boss and keeps the 1v5/two-power invariants",()=> {
+            Probe("Next round retains the chosen T boss and the 1v5/two-power invariants",()=> {
                 Require(Mode.Live && Powers.Loadout?.Powers.Count==2 && Mode.Opponents.Count()==5,"invalid round state");
-                Require(Players.Key(Mode.Boss!)!=_probeFirstBoss,"boss did not rotate");
+                Require(Players.Key(Mode.Boss!)==_probeFirstBoss,"chosen T boss changed");
                 Require(Mode.Eligible().All(p=>Players.AlivePawn(p)?.Health==100),"spawn health");
             });
             File.WriteAllText(Path.Combine(ProbeDirectory,"native-probe-results.json"),JsonSerializer.Serialize(_probeResults,new JsonSerializerOptions { WriteIndented=true }));
@@ -76,7 +82,7 @@ public sealed partial class Plugin
             Require(Mode.Eligible().All(p=>Players.AlivePawn(p)?.Health==100),"health");
             _probeFirstBoss=Players.Key(Mode.Boss!);
         });
-        Probe("All 16 powers construct and apply in the engine",()=> {
+        Probe("All 18 powers construct and apply in the engine",()=> {
             foreach (var definition in PowerCatalog.All)
             {
                 Powers.NativeProbePair(definition.Id,definition.Id=="infinite_ammo" ? "teleport" : "infinite_ammo");
@@ -137,8 +143,8 @@ public sealed partial class Plugin
         Probe("Invisibility applies automatically, reports active, and restores color",()=> {
             Powers.NativeProbePair("teleport","infinite_ammo"); var pawn=Players.AlivePawn(Mode.Boss)!; var color=pawn.Render;
             Powers.NativeProbePair("invisibility","infinite_ammo");
-            Require(pawn.Render.A==25 && Powers.Status("invisibility")=="active until round ends","automatic application");
-            Powers.NativeProbePair("teleport","infinite_ammo"); Require(pawn.Render==color,"cleanup");
+            Require(Effects.HiddenEntityCount>0 && Powers.Status("invisibility")=="active until round ends","automatic application");
+            Powers.NativeProbePair("teleport","infinite_ammo"); Require(pawn.Render==color && Effects.HiddenEntityCount==0,"cleanup");
         });
         Probe("Infinite ammo refills an equipped firearm",()=> {
             Powers.NativeProbePair("teleport","infinite_ammo"); var service=Players.AlivePawn(Mode.Boss)!.WeaponServices!;

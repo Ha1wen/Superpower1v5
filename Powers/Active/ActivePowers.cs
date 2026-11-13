@@ -10,18 +10,10 @@ public sealed class Invisibility() : Power("invisibility")
     public override void Apply(PowerContext c) { _active=true; SlowTick(c); }
     public override void SlowTick(PowerContext c)
     {
-        var keep = new HashSet<uint>();
-        if (_active && c.Pawn is { } p)
-        {
-            keep.Add(p.EntityHandle.Raw); c.Plugin.Effects.Fade(p,(byte)Settings(c).Strength);
-            if (p.WeaponServices is { } service)
-                foreach (var handle in service.MyWeapons)
-                    if (handle.Value is { IsValid: true } w && w.OwnerEntity.Raw == p.EntityHandle.Raw)
-                    { keep.Add(w.EntityHandle.Raw); c.Plugin.Effects.Fade(w,(byte)Settings(c).Strength); }
-        }
-        c.Plugin.Effects.RestoreColorsExcept(keep);
+        if (_active && c.Pawn is { } p && c.Boss is { } boss) c.Plugin.Effects.Conceal(p,boss);
+        else c.Plugin.Effects.ClearConcealment();
     }
-    public override void Cleanup(PowerContext c) { _active=false; c.Plugin.Effects.RestoreColorsExcept(new HashSet<uint>()); }
+    public override void Cleanup(PowerContext c) { _active=false; c.Plugin.Effects.ClearConcealment(); }
 }
 public sealed class Teleport() : Power("teleport")
 {

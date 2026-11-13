@@ -11,7 +11,7 @@ public sealed class Sandevistan() : Power("sandevistan")
     {
         if (!context.Opponents.Any(p=>Players.AlivePawn(p) is not null)) return false;
         _until=context.Now+Settings(context).Duration;
-        context.Plugin.Broadcast($"SANDEVISTAN! Opponents are frozen for {Settings(context).Duration:0.#} seconds.");
+        context.Tell($"Sandevistan: opponents frozen for {Settings(context).Duration:0.#} seconds.");
         Tick(context); return true;
     }
     public override void Tick(PowerContext context)

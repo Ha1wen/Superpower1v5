@@ -35,6 +35,7 @@ public abstract class Power(string id)
     public virtual void PostThink(PowerContext c) { }
     public virtual void BulletImpact(PowerContext c, CounterStrikeSharp.API.Modules.Utils.Vector impact) { }
     public virtual void Smoke(PowerContext c, CounterStrikeSharp.API.Modules.Utils.Vector origin) { }
+    public virtual void Projectile(PowerContext c,CBaseCSGrenadeProjectile projectile) { }
     public virtual void WeaponFire(PowerContext c) { }
     public virtual void Jump(PowerContext c) { }
     public virtual void ModifyDamage(PowerContext c, DamageEvent hit) { }

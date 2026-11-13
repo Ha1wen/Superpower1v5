@@ -44,7 +44,7 @@ public sealed partial class Plugin
     [ConsoleCommand("css_help","Superpower 1v5 instructions")]
     public void HelpCommand(CCSPlayerController? p,CommandInfo cmd)
     {
-        cmd.ReplyToCommand(Prefix+"One rotating player receives TWO random powers per round. Everyone starts at 100 HP. Opponents play normal CS2.");
+        cmd.ReplyToCommand(Prefix+"The T player is the boss and receives TWO private random powers. Join CT to oppose them. Juggernaut gives the boss 500 HP.");
         cmd.ReplyToCommand(Prefix+"!power | !powers | !ability1 | !ability2 | !cooldowns. Console binds: bind v css_ability1; bind b css_ability2");
     }
 }

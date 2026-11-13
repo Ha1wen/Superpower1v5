@@ -29,7 +29,7 @@ public static class Players
     public static void Heal(CCSPlayerController? p, int amount)
     {
         if (AlivePawn(p) is not { } pawn || amount <= 0) return;
-        pawn.Health = Math.Min(100, pawn.Health + amount);
+        pawn.Health = Math.Min(Math.Clamp(pawn.MaxHealth,100,500), pawn.Health + amount);
         CounterStrikeSharp.API.Utilities.SetStateChanged(pawn, "CBaseEntity", "m_iHealth");
     }
     public static bool Firearm(CBasePlayerWeapon? w) => w is { IsValid: true } && w.VData is { MaxClip1: > 0 } && w.DesignerName != "weapon_taser";

@@ -17,7 +17,7 @@ public sealed partial class Plugin
 {
     private void ScheduleNewPowerTests()
     {
-        AddTimer(12,()=>Probe("All 16 powers apply; six bots retain one boss and two powers",()=> {
+        AddTimer(12,()=>Probe("All 18 powers apply; six bots retain one boss and two powers",()=> {
             Require(Mode.Live && Mode.Eligible().Count==6 && Mode.Opponents.Count()==5,"roster");
             foreach (var power in PowerCatalog.All)
             {

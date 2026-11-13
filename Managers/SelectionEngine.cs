@@ -25,19 +25,3 @@ public sealed class SelectionEngine(Random random)
         return pool[random.Next(pool.Count)];
     }
 }
-
-public sealed class FairRotation
-{
-    private readonly Dictionary<string, long> _lastTurn = new();
-    private long _turn;
-    public string Choose(IReadOnlyList<string> eligible, bool rotate, string? current, string? forced = null)
-    {
-        if (eligible.Count == 0) throw new InvalidOperationException("No eligible players.");
-        var choice = forced is not null && eligible.Contains(forced) ? forced :
-            !rotate && current is not null && eligible.Contains(current) ? current :
-            eligible.OrderBy(id => _lastTurn.GetValueOrDefault(id, long.MinValue)).First();
-        _lastTurn[choice] = ++_turn;
-        return choice;
-    }
-    public void Clear() { _lastTurn.Clear(); _turn = 0; }
-}

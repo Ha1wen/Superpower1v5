@@ -67,7 +67,8 @@ public sealed partial class Plugin
     public void DebugCommand(CCSPlayerController? p,CommandInfo cmd)
     {
         cmd.ReplyToCommand($"Superpower1v5 {ModuleVersion}; Enabled={Config.Enabled}; Live={Mode.Live}; Warmup={Mode.Warmup}; Generation={Mode.Generation}");
-        cmd.ReplyToCommand($"Boss={Mode.Boss?.PlayerName??"none"}; Eligible={Mode.Eligible().Count}; Opponents={Mode.Opponents.Count()}; Powers={string.Join(',',Powers.Loadout?.Powers.Select(x=>x.Id)??[])}");
+        var visible= p is null || Mode.IsBoss(p);
+        cmd.ReplyToCommand($"Boss={Mode.Boss?.PlayerName??"none"}; Eligible={Mode.Eligible().Count}; Opponents={Mode.Opponents.Count()}; Powers={(visible ? string.Join(',',Powers.Loadout?.Powers.Select(x=>x.Id)??[]) : "private")}");
         foreach (var player in Utilities.GetPlayers().Where(Players.Playing))
             cmd.ReplyToCommand($"#{player.UserId} {player.PlayerName}: team={player.Team}; HP={Players.AlivePawn(player)?.Health??0}; powers={(Mode.IsBoss(player)?Powers.Loadout?.Powers.Count??0:0)}");
     }

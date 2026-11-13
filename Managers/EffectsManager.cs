@@ -20,7 +20,32 @@ public sealed class EffectsManager
     private readonly Dictionary<uint, (int word, uint bit, bool hadBit, bool spotted)> _radar = new();
     private readonly Dictionary<uint, Outline> _outlines = new();
     private Outline[] _transmitOutlines = [];
+    private sealed record Concealed(uint Viewer,uint[] Indices);
+    private Concealed? _concealed;
     public int OutlineCount => _outlines.Count;
+    public int HiddenEntityCount => Volatile.Read(ref _concealed)?.Indices.Length ?? 0;
+    public bool HiddenFrom(uint viewer,uint entityIndex) => Volatile.Read(ref _concealed) is { } hidden && hidden.Viewer!=viewer && Array.IndexOf(hidden.Indices,entityIndex)>=0;
+    public void Conceal(CCSPlayerPawn pawn,CCSPlayerController viewer)
+    {
+        var owned=new Dictionary<uint,uint> { [pawn.EntityHandle.Raw]=pawn.Index };
+        var entities=Utilities.GetAllEntities().Where(e=>e.IsValid).ToArray();
+        // Follow ownership and parenting through equipment and weapon world models.
+        for (var pass=0;pass<16;pass++)
+        {
+            var added=false;
+            foreach (var entity in entities)
+            {
+                if (!entity.IsValid || owned.ContainsKey(entity.EntityHandle.Raw) || entity.DesignerName.EndsWith("_projectile",StringComparison.Ordinal) || entity.DesignerName=="inferno") continue;
+                var model=entity.As<CBaseEntity>();
+                var parent=model.CBodyComponent?.SceneNode?.PParent?.Owner;
+                if (!owned.ContainsKey(model.OwnerEntity.Raw) && (parent is null || !owned.ContainsKey(parent.EntityHandle.Raw))) continue;
+                owned[entity.EntityHandle.Raw]=entity.Index; added=true;
+            }
+            if (!added) break;
+        }
+        Volatile.Write(ref _concealed,new(viewer.EntityHandle.Raw,owned.Values.ToArray()));
+    }
+    public void ClearConcealment() => Volatile.Write(ref _concealed,null);
 
     public void Speed(CCSPlayerPawn pawn, string source, float amount) => SetScalar(pawn, source, amount, false);
     public void Gravity(CCSPlayerPawn pawn, string source, float amount) => SetScalar(pawn, source, amount, true);
@@ -152,7 +177,8 @@ public sealed class EffectsManager
     public void FilterTransmission(CCheckTransmitInfoList clients)
     {
         var outlines = Volatile.Read(ref _transmitOutlines);
-        if (outlines.Length == 0) return;
+        var hidden=Volatile.Read(ref _concealed);
+        if (outlines.Length == 0 && hidden is null) return;
         foreach (var (info, viewer) in clients)
         {
             var raw = viewer?.EntityHandle.Raw;
@@ -161,6 +187,8 @@ public sealed class EffectsManager
                 if (raw == outline.Viewer) { info.TransmitEntities.Add(outline.RelayIndex); info.TransmitEntities.Add(outline.GlowIndex); }
                 else { info.TransmitEntities.Remove(outline.RelayIndex); info.TransmitEntities.Remove(outline.GlowIndex); }
             }
+            if (hidden is not null && raw!=hidden.Viewer)
+                foreach (var index in hidden.Indices) info.TransmitEntities.Remove(index);
         }
     }
     public void PruneOutlines(ISet<uint> living)
@@ -188,6 +216,6 @@ public sealed class EffectsManager
     public void Clear()
     {
         foreach (var (key, scalar) in _scalars) Write(Players.Entity<CCSPlayerPawn>(key.pawn), key.gravity, scalar.Baseline, scalar.ActualBaseline);
-        _scalars.Clear(); RestoreColorsExcept(new HashSet<uint>()); ClearRadar();
+        _scalars.Clear(); RestoreColorsExcept(new HashSet<uint>()); ClearRadar(); ClearConcealment();
     }
 }

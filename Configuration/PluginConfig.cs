@@ -28,12 +28,14 @@ public sealed class PowerSettings
         "low_gravity" => new() { Strength = .35f },
         "wall_vision" => new(),
         "knockback" => new() { Strength = 800 },
-        "second_chance" => new() { Strength = 100 },
+        "second_chance" => new() { Strength = 100, Duration = 3 },
         "bhop" => new() { Strength = 301.99f },
         "sandevistan" => new() { Duration = 10, Cooldown = 35 },
         "pyromaniac" => new() { Strength = 20, Duration = 7, Radius = 120, Interval = .5f, MaxEntities = 8 },
         "random_explosion" => new() { Strength = 500, Cooldown = 20 },
         "tiny" => new() { Strength = .5f },
+        "juggernaut" => new() { Strength = 500 },
+        "cluster_grenade" => new() { Strength = 4, MaxEntities = 32 },
         _ => new()
     };
 
@@ -44,11 +46,14 @@ public sealed class PowerSettings
         Duration = Safe(Duration, .1f, 60, Math.Max(.1f, d.Duration));
         if (id is "invisibility" or "wall_vision") { Duration = 0; Cooldown = 0; }
         if (id == "random_explosion") Duration = 0;
+        if (id == "second_chance") Duration = Safe(Duration,1,8,3);
         Interval = Safe(Interval, .05f, 300, d.Interval);
         Radius = Safe(Radius, 32, 500, d.Radius);
         Distance = id == "teleport" && Distance == 0 ? 0 : Safe(Distance, 64, 32768, d.Distance);
         Chance = Safe(Chance, 0, 1, d.Chance);
-        MaxEntities = Math.Clamp(MaxEntities,1,16);
+        MaxEntities = Math.Clamp(MaxEntities,1,id=="cluster_grenade" ? 64 : 16);
+        if (id=="juggernaut") Strength=500;
+        if (id=="cluster_grenade") Strength=4;
         var range = id switch
         {
             "super_speed" => (1f, 5f),
@@ -63,6 +68,8 @@ public sealed class PowerSettings
             "pyromaniac" => (1f,100f),
             "random_explosion" => (100f,1000f),
             "tiny" => (.3f,.8f),
+            "juggernaut" => (500f,500f),
+            "cluster_grenade" => (4f,4f),
             _ => (0f, 1000f)
         };
         Strength = Safe(Strength, range.Item1, range.Item2, d.Strength);
@@ -75,14 +82,14 @@ public sealed class PowerSettings
 public sealed class PluginConfig : BasePluginConfig
 {
     [JsonPropertyName("ConfigVersion")]
-    public override int Version { get; set; } = 5;
+    public override int Version { get; set; } = 6;
     public bool Enabled { get; set; } = true;
     public string GameMode { get; set; } = "1v5";
     public int NormalHealth { get; set; } = 100;
     public int SuperpoweredPlayerCount { get; set; } = 1;
     public int PowersPerRound { get; set; } = 2;
     public int MaxOpponents { get; set; } = 5;
-    public bool RotateSuperpoweredPlayer { get; set; } = true;
+    public bool RotateSuperpoweredPlayer { get; set; }
     public string SuperpoweredPlayerTeam { get; set; } = "T";
     public bool AllowBots { get; set; } = true;
     public bool AllowDuplicatePowers { get; set; }
@@ -103,7 +110,8 @@ public sealed class PluginConfig : BasePluginConfig
         AllowDuplicatePowers = false;
         GameMode = "1v5";
         MaxOpponents = Math.Clamp(MaxOpponents, 1, 5);
-        SuperpoweredPlayerTeam = string.Equals(SuperpoweredPlayerTeam, "CT", StringComparison.OrdinalIgnoreCase) ? "CT" : "T";
+        SuperpoweredPlayerTeam = "T";
+        RotateSuperpoweredPlayer = false;
         PowerBlacklist = (PowerBlacklist ?? []).Where(s => !string.IsNullOrWhiteSpace(s))
             .Select(s => s.Trim().ToLowerInvariant()).Distinct().ToList();
         Powers ??= new();
@@ -128,6 +136,7 @@ public sealed class PluginConfig : BasePluginConfig
             Powers["random_explosion"].Cooldown=20;
             Version=5;
         }
+        if (Version < 6) { Powers["second_chance"].Duration=3; Version=6; }
     }
 
     public bool IsAvailable(PowerDefinition power) => Powers[power.Id].Enabled && !PowerBlacklist.Contains(power.Id);

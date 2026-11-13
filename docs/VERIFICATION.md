@@ -1,19 +1,44 @@
-# Verification: v1.5.0
+# Verification: v1.6.0
 
 Tested on 2026-11-13 with Windows CS2, CounterStrikeSharp API 1.0.380.0, .NET 10 and SDK 10.0.404.
 
-- Production Release build: zero warnings/errors.
-- **24/24 automated checks passed**, covering valid/uniform power selection over 50,000 rounds, roster/rotation and human priority, permission attributes, replacements, cooldown preservation, configuration migration, retired powers, passive powers and damage bookkeeping. Diagnostic entry points are excluded from the production assembly.
-- **5/5 native bot checks passed** in a separate private server, including a direct kill from a six-player living pool, armor/Vampirism behavior, blocking at 19 seconds, reuse after 20 seconds with dead players excluded, boss self-selection with Second Chance, and recovery into the next round.
+## Changes verified
 
-The checked-in [native results](verification/native-gameplay.json) came from the running-engine test. Production uses Random.Shared; the diagnostic build supplies deterministic random choices to cover both opponent and boss selection through the same code.
+- The chosen T player remains boss across rounds; CT players are never automatically promoted. The T slot is limited to one boss, and a human choosing T can replace a bot.
+- Assigned power announcements, descriptions, cooldown HUD, ability notices and sounds are addressed only to the boss. Non-boss client admin diagnostics redact assigned IDs. General round messages remain public.
+- Invisibility filters body, weapon and attached-equipment entity indices out of other clients' transmissions. The boss retains their own view. Detached items are pruned from concealment; cleanup releases the filter. This replaces incomplete model-alpha fading.
+- Juggernaut applies 500 health/max health once on assignment/spawn, supports damage and healing to the new cap, and restores the normal cap on removal.
+- Second Chance records bounded position/facing/velocity/health/armor history and rewinds about three seconds on lethal damage. It uses the player-specific pre-damage callback, zeroes incoming damage, allows brief recovery, validates landing clearance and reapplies teleport after the damage flow to avoid lag-compensation rollback. One use per round remains enforced.
+- Cluster Grenade makes four total real projectiles per utility throw. Copies preserve thrower/type and cannot recursively split. HE, flash, smoke, Molotov, incendiary and decoy activation were all checked.
 
-The install ZIP contains the tested production DLL, SHA256:
+## Production build and offline checks
 
-```text
-6A7C5A7AA848C106767D462A874B70F3DF9C683038B827887F9FA7C553467F3F
-```
+Release build: zero warnings/errors. **27/27 automated checks pass**, including 50,000-round pair validity and uniform distribution samples, permanent T ownership, no CT promotion, bot replacement rules, spectator/roster limits, permissions, config migration, cooldown preservation, passive powers, bounded rewind history and timing.
 
-Server tests establish state, death handling, timing and cleanup. Client rendering of translucent players and wall outlines still needs human playtesting. The isolated Windows host reported an existing 0xC0000005 during quit after successful plugin unload; no gameplay access violation occurred in the completed checks.
+Diagnostic code remains excluded from production. The repository does not contain the CS2 server, API binaries, private test server, raw console logs or backups.
 
-The CS2 server, private diagnostic server, API binaries, raw logs and local backups are not part of this repository.
+## Native gameplay checks
+
+**46/46 native checks pass** across three private localhost bot scenarios:
+
+1. **28 checks** for all 18 powers applying, concealment recipients/body/equipment/detachment, Juggernaut damage/healing/removal, recorded rewind and lethal interception, one-use protection, permanent T ownership, four-projectile splitting and actual activation for all six utility types, real bot weapon damage and final round cleanup.
+2. **Two focused rifle checks** with a boss starting at 100 HP, moved away from the historical position before combat. An AK-47 bot fires actual `DMG_BULLET` hits; the fatal hit restores health/position and the round remains live. The pre-damage and deferred-teleport path are exercised together.
+3. **16 regression checks** for roster/health, all 18 apply paths, Vampirism, null native damage buffers/event fallback, slot/cooldown preservation, Speed/Gravity restoration, long teleport, automatic concealment, Infinite Ammo, real Knockback movement, Wall Vision lifecycle, measured gravity, Second Chance and retaining the T boss across the next round.
+
+Evidence checked into this repository: [gameplay results](verification/native-gameplay.json), [rifle rewind](verification/rifle-rewind.json), and [regression results](verification/regression.json). The broad scenario's historical test label says "bot-fired lethal bullet" for a hit whose diagnostic damage type was actually `DMG_SLASH`; it verifies real bot weapon damage. The separate rifle scenario explicitly confirms `DMG_BULLET` and supplies the gunfire evidence.
+
+The final broad scenario used private PID 9560, the focused moving/rifle case PID 39700, and the regression run PID 37184. They completed gameplay checks and exited cleanly after plugin unload. Other exploratory isolated runs still reproduced the previously recorded Windows shutdown access violation. No live user server was terminated.
+
+## Remaining limits
+
+Human rendering of invisibility and through-wall outlines still needs client playtesting. Tests establish the server's transmission decisions and cleanup, rather than a screenshot from every client. Visible gameplay effects may reveal an ability naturally even though assignment information is private.
+
+Unsafe rewind positions are skipped, with small upward floor-clearance adjustments. Short histories use the earliest safe sample; if no safe sample exists, health recovery stays at the current location. Forced death such as Random Kill bypasses damage-based Second Chance.
+
+Cluster copies are capped (32 by default). The factories use engine signatures and require revalidation after game updates. Windows is tested; Linux signatures have not been exercised here. API 380's native secondary damage ABI also needs revalidation after framework/engine changes.
+
+Implementation references: [CounterStrikeSharp API source](https://github.com/roflmuffin/CounterStrikeSharp/tree/2273dd1631a5719f2cacc6e9abbf67ac0bc30bc0), [MatchZy grenade factories](https://github.com/shobhit-pathak/MatchZy/blob/main/GrenadeProjectiles.cs), [SwiftlyS2 grenade signatures](https://github.com/swiftly-solution/swiftlys2/blob/master/plugin_files/gamedata/cs2/core/signatures.jsonc), and [the NadeSystem author's factory bindings](https://github.com/ed0ard/CS2-Bot-NadeSystem/blob/main/NadeSystem.cs). The plugin implements its own ownership, splitting, cleanup and recipient filtering.
+
+## Release
+
+The release manifest inside the install ZIP records the production DLL checksum. ConfigVersion 6 preserves unrelated settings while adding Juggernaut/Cluster Grenade, the three-second rewind and fixed T ownership. Deployment backs up the previous configuration.

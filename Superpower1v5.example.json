@@ -1,12 +1,12 @@
 {
-  "ConfigVersion": 5,
+  "ConfigVersion": 6,
   "Enabled": true,
   "GameMode": "1v5",
   "NormalHealth": 100,
   "SuperpoweredPlayerCount": 1,
   "PowersPerRound": 2,
   "MaxOpponents": 5,
-  "RotateSuperpoweredPlayer": true,
+  "RotateSuperpoweredPlayer": false,
   "SuperpoweredPlayerTeam": "T",
   "AllowBots": true,
   "AllowDuplicatePowers": false,
@@ -129,7 +129,7 @@
     "second_chance": {
       "Enabled": true,
       "Cooldown": 0,
-      "Duration": 0.1,
+      "Duration": 3,
       "Strength": 100,
       "Chance": 0,
       "Interval": 1,
@@ -191,6 +191,28 @@
       "Radius": 140,
       "Distance": 450,
       "MaxEntities": 8
+    },
+    "juggernaut": {
+      "Enabled": true,
+      "Cooldown": 0,
+      "Duration": 0.1,
+      "Strength": 500,
+      "Chance": 0,
+      "Interval": 1,
+      "Radius": 140,
+      "Distance": 450,
+      "MaxEntities": 8
+    },
+    "cluster_grenade": {
+      "Enabled": true,
+      "Cooldown": 0,
+      "Duration": 0.1,
+      "Strength": 4,
+      "Chance": 0,
+      "Interval": 1,
+      "Radius": 140,
+      "Distance": 450,
+      "MaxEntities": 32
     }
   }
 }

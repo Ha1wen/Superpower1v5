@@ -23,8 +23,8 @@ void Check(bool success,string message) { if (!success) throw new Exception(mess
 void Reject(Action action) { try { action(); } catch (ArgumentException) { return; } catch (InvalidOperationException) { return; } throw new Exception("Invalid input was accepted."); }
 PluginConfig Default() { var c=new PluginConfig(); c.Validate(); return c; }
 
-tests.Add(("All 16 powers have unique IDs and concrete implementations",()=> {
-    Check(PowerCatalog.All.Count==16 && PowerCatalog.All.Select(p=>p.Id).Distinct().Count()==16,"Catalog count or duplicate IDs");
+tests.Add(("All 18 powers have unique IDs and concrete implementations",()=> {
+    Check(PowerCatalog.All.Count==18 && PowerCatalog.All.Select(p=>p.Id).Distinct().Count()==18,"Catalog count or duplicate IDs");
     foreach (var p in PowerCatalog.All) Check(PowerManager.Create(p.Id).Id==p.Id,"Factory missing "+p.Id);
 }));
 tests.Add(("Mode configuration repairs invalid and null input",()=> {
@@ -32,7 +32,7 @@ tests.Add(("Mode configuration repairs invalid and null input",()=> {
         MaxOpponents=88,SuperpoweredPlayerTeam="bogus",Powers=null!,PowerBlacklist=null! };
     c.Validate();
     Check(c.NormalHealth==100 && c.SuperpoweredPlayerCount==1 && c.PowersPerRound==2 && !c.AllowDuplicatePowers,"Mode invariant violated");
-    Check(c.MaxOpponents==5 && c.SuperpoweredPlayerTeam=="T" && c.Powers.Count==16,"Defaults not repaired");
+    Check(c.MaxOpponents==5 && c.SuperpoweredPlayerTeam=="T" && c.Powers.Count==18,"Defaults not repaired");
     c.Powers["teleport"].Distance=float.NaN; c.Powers["rapid_fire"].Strength=99; c.Validate();
     Check(c.Powers["teleport"].Distance==0 && c.Powers["rapid_fire"].Strength==1.6f,"Unsafe tuning accepted");
 }));
@@ -48,8 +48,8 @@ tests.Add(("50,000 rounds give every power equal probability in both slots",()=>
     for (var i=0;i<n;i++) { var pair=s.SelectPair(c); first[pair[0].Id]++; second[pair[1].Id]++; }
     foreach (var id in first.Keys)
     {
-        Check(Math.Abs((double)first[id]/n-1.0/16)<.005,$"First slot biased: {id}: {first[id]}");
-        Check(Math.Abs((double)second[id]/n-1.0/16)<.005,$"Second slot biased: {id}: {second[id]}");
+        Check(Math.Abs((double)first[id]/n-1.0/18)<.005,$"First slot biased: {id}: {first[id]}");
+        Check(Math.Abs((double)second[id]/n-1.0/18)<.005,$"Second slot biased: {id}: {second[id]}");
     }
 }));
 tests.Add(("Blacklists, disabled powers and insufficient pools are safe",()=> {
@@ -66,26 +66,25 @@ tests.Add(("Compatibility is symmetric and excludes duplicate IDs",()=> {
     Check(!PowerCatalog.Compatible(a,b) && !PowerCatalog.Compatible(b,a) && !PowerCatalog.Compatible(a,a),"Compatibility failure");
 }));
 tests.Add(("One boss and up to five normal opponents; spectators never selected",()=> {
-    var players=Enumerable.Range(0,8).Select(i=>new Candidate(i.ToString(),false,i==7 ? 1 : 2)).ToList();
-    var rotation=new FairRotation();
-    for (var i=0;i<40;i++) { var roster=RosterPlanner.Plan(players,rotation,true,5,true,null,null)!;
+    var players=Enumerable.Range(0,8).Select(i=>new Candidate(i.ToString(),false,i==7 ? 1 : i==0 ? 2 : 3)).ToList();
+    for (var i=0;i<40;i++) { var roster=RosterPlanner.Plan(players,true,5)!;
         Check(roster.Boss!="7" && roster.Opponents.Count==5 && !roster.Opponents.Contains(roster.Boss),"Roster invariant violated");
         Check(!roster.Opponents.Contains("7") && roster.Benched.Count==1,"Spectator or bench failure"); }
-    Check(RosterPlanner.Plan([new("solo",false,2)],rotation,true,5,true,null,null) is null,"Solo challenge started");
-    Check(RosterPlanner.Plan([new("a",false,2),new("b",false,3)],rotation,true,5,true,null,null)!.Opponents.Count==1,"1v1 failed");
+    Check(RosterPlanner.Plan([new("solo",false,2)],true,5) is null,"Solo challenge started");
+    Check(RosterPlanner.Plan([new("a",false,2),new("b",false,3)],true,5)!.Opponents.Count==1,"1v1 failed");
 }));
-tests.Add(("Fair rotation visits all six humans once before repetition",()=> {
-    var r=new FairRotation(); var ids=Enumerable.Range(0,6).Select(i=>i.ToString()).ToArray();
-    var turns=Enumerable.Range(0,18).Select(_=>r.Choose(ids,true,null)).ToArray();
-    for (var i=0;i<18;i+=6) Check(turns.Skip(i).Take(6).Distinct().Count()==6,"Unfair rotation");
-    Check(r.Choose(ids,false,"3")=="3" && r.Choose(ids,true,null,"5")=="5","Fixed/forced selection failed");
-    Check(r.Choose(["new"],true,"disconnected")=="new","Disconnected ID retained");
+tests.Add(("The chosen T player stays boss and CT players are never promoted",()=> {
+    var players=new[] {new Candidate("ct",false,3),new Candidate("boss",false,2),new Candidate("ct2",false,3)};
+    for (var i=0;i<40;i++) Check(RosterPlanner.Plan(players,true,5,"boss")!.Boss=="boss","boss rotated");
+    Check(RosterPlanner.Plan([new("ct1",false,3),new("ct2",false,3)],true,5) is null,"CT was automatically promoted");
+    var multiple=new[] {new Candidate("first",false,2),new Candidate("incumbent",false,2),new Candidate("ct",false,3)};
+    Check(RosterPlanner.Plan(multiple,true,5,"incumbent")!.Boss=="incumbent","incumbent lost T slot");
 }));
-tests.Add(("Humans take boss priority; bots may be excluded; disconnected players are absent",()=> {
-    var r=new FairRotation(); var players=new[] {new Candidate("bot",true,2),new Candidate("human",false,3),new Candidate("spectator",false,1)};
-    Check(RosterPlanner.Plan(players,r,true,5,true,null,"bot")!.Boss=="human","Bot displaced human");
-    Check(RosterPlanner.Plan(players,r,false,5,true,null,null) is null,"Excluded bot included");
-    Check(RosterPlanner.Plan([new("bot1",true,2),new("bot2",true,3)],r,true,5,true,null,null) is not null,"Bot-only testing unsupported");
+tests.Add(("A human choosing T replaces a bot; bot exclusion and spectators remain respected",()=> {
+    var players=new[] {new Candidate("bot",true,2),new Candidate("human",false,2),new Candidate("ct",false,3),new Candidate("spectator",false,1)};
+    Check(RosterPlanner.Plan(players,true,5,"bot")!.Boss=="human","T human did not replace bot");
+    Check(RosterPlanner.Plan([new("bot",true,2),new("ct",false,3)],false,5) is null,"excluded bot included");
+    Check(RosterPlanner.Plan([new("bot1",true,2),new("bot2",true,3)],true,5) is not null,"Bot-only testing unsupported");
 }));
 tests.Add(("Power replacements retain exactly two distinct retained powers",()=> {
     var c=Default(); var s=new SelectionEngine(new Random(1)); var kept=PowerCatalog.Get("infinite_ammo");
@@ -108,9 +107,9 @@ tests.Add(("Every administrator entry point requires CounterStrikeSharp permissi
     Check(admin.Count==9,"Missing admin commands");
     foreach (var m in admin) Check(m.GetCustomAttributes<RequiresPermissions>().Any(),"Unprotected command: "+m.Name);
 }));
-tests.Add(("Default configuration round-trips all 16 power settings",()=> {
+tests.Add(("Default configuration round-trips all 18 power settings",()=> {
     var c=Default(); var json=JsonSerializer.Serialize(c); var copy=JsonSerializer.Deserialize<PluginConfig>(json)!; copy.Validate();
-    Check(copy.Powers.Count==16 && copy.Powers["vampirism"].Strength==1 && copy.Powers["teleport"].Cooldown==15,"Config round-trip failure");
+    Check(copy.Powers.Count==18 && copy.Powers["vampirism"].Strength==1 && copy.Powers["teleport"].Cooldown==15,"Config round-trip failure");
 }));
 tests.Add(("Removed powers cannot be selected, assigned, or retained in migrated config",()=> {
     var retired=new[] { "super_jump","double_jump","regeneration","damage_resistance","glass_cannon","freeze_shot","damage_reflection","lucky_shot","randomizer","yoru_flash" };
@@ -120,7 +119,7 @@ tests.Add(("Removed powers cannot be selected, assigned, or retained in migrated
     c.Powers["teleport"].Distance=450; c.Powers["teleport"].Cooldown=7; c.Powers["explosive_bullets"].Strength=18;
     c.Validate();
     Check(retired.All(id=>!c.Powers.ContainsKey(id) && !PowerCatalog.All.Any(p=>p.Id==id)),"Removed power survived");
-    Check(c.Version==5 && c.Powers["super_speed"].Strength==2.5f && c.Powers["vampirism"].Strength==1 && c.Powers["explosive_bullets"].Strength==55,"Balance migration failed");
+    Check(c.Version==6 && c.Powers["super_speed"].Strength==2.5f && c.Powers["vampirism"].Strength==1 && c.Powers["explosive_bullets"].Strength==55,"Balance migration failed");
     Check(c.Powers["teleport"].Distance==0 && c.Powers["teleport"].Cooldown==7,"Migration lost customized cooldown");
 }));
 tests.Add(("Unlimited teleport uses a finite world trace with no old 1200-unit clamp",()=> {
@@ -156,7 +155,7 @@ tests.Add(("Version 2 migration adds retained new powers and preserves customize
     var added=new[] { "bhop","sandevistan","pyromaniac","random_explosion","tiny" };
     foreach (var id in added) c.Powers.Remove(id);
     c.Powers["super_speed"].Strength=3; c.Powers["teleport"].Cooldown=8; c.Validate();
-    Check(c.Version==5 && c.Powers.Count==16 && added.All(c.Powers.ContainsKey),"Missing new powers");
+    Check(c.Version==6 && c.Powers.Count==18 && added.All(c.Powers.ContainsKey),"Missing new powers");
     Check(c.Powers["super_speed"].Strength==3 && c.Powers["teleport"].Cooldown==8,"Customized settings changed");
     Check(c.Powers["sandevistan"].Duration==10 && c.Powers["random_explosion"].Duration==0 && c.Powers["random_explosion"].Cooldown==20,"Requested durations changed");
 }));
@@ -182,7 +181,7 @@ tests.Add(("Version 3 JSON drops rarities and Yoru while preserving unrelated tu
      "invisibility":{"Duration":5,"Cooldown":25,"Strength":40},"wall_vision":{"Duration":6,"Cooldown":25}}}
     """;
     var c=JsonSerializer.Deserialize<PluginConfig>(old)!; c.Validate(); var json=JsonSerializer.Serialize(c);
-    Check(c.Version==5 && c.Powers.Count==16 && !json.Contains("RarityWeights") && !json.Contains("yoru_flash"),"Removed configuration survived");
+    Check(c.Version==6 && c.Powers.Count==18 && !json.Contains("RarityWeights") && !json.Contains("yoru_flash"),"Removed configuration survived");
     Check(c.Powers["super_speed"].Strength==3 && c.Powers["teleport"].Cooldown==8 && c.Powers["invisibility"].Strength==40,"Customized settings lost");
     Check(typeof(PowerDefinition).GetProperty("Rarity") is null,"Rarity remains in the catalog model");
 }));
@@ -191,7 +190,7 @@ tests.Add(("Version 4 migration makes explosions immediate with a 20-second cool
     c.Powers["random_explosion"].Duration=20; c.Powers["random_explosion"].Cooldown=45;
     c.Powers["random_explosion"].Strength=600; c.Powers["teleport"].Cooldown=8;
     c.Validate();
-    Check(c.Version==5 && c.Powers["random_explosion"].Duration==0 && c.Powers["random_explosion"].Cooldown==20,"Old fuse/cooldown survived");
+    Check(c.Version==6 && c.Powers["random_explosion"].Duration==0 && c.Powers["random_explosion"].Cooldown==20,"Old fuse/cooldown survived");
     Check(c.Powers["random_explosion"].Strength==600 && c.Powers["teleport"].Cooldown==8,"Other tuning changed");
     var loadout=new RoundLoadout([PowerCatalog.Get("random_explosion"),PowerCatalog.Get("infinite_ammo")]);
     loadout.StartCooldown("random_explosion",10,c.Powers["random_explosion"].Cooldown);
@@ -202,6 +201,28 @@ tests.Add(("Invisibility and Wall Vision are passive and require no activation",
     foreach (var id in new[] { "invisibility","wall_vision" })
         Check(PowerCatalog.Get(id).Kind==PowerKind.Passive,"Still activated: "+id);
     Check(PowerCatalog.Get("random_explosion").Kind==PowerKind.Activated,"Explosion activation changed");
+}));
+tests.Add(("Version 5 migration adds Juggernaut and Cluster Grenade, with permanent T ownership",()=> {
+    var c=Default(); c.Version=5; c.RotateSuperpoweredPlayer=true; c.SuperpoweredPlayerTeam="CT";
+    c.Powers.Remove("juggernaut"); c.Powers.Remove("cluster_grenade"); c.Powers["second_chance"].Duration=.1f;
+    c.Powers["teleport"].Cooldown=8; c.Validate();
+    Check(c.Version==6 && c.Powers.Count==18 && c.SuperpoweredPlayerTeam=="T" && !c.RotateSuperpoweredPlayer,"team/config migration");
+    Check(c.Powers["juggernaut"].Strength==500 && c.Powers["cluster_grenade"].Strength==4 && c.Powers["second_chance"].Duration==3,"new settings");
+    Check(c.Powers["teleport"].Cooldown==8,"unrelated tuning changed");
+}));
+tests.Add(("Rewind picks a historical frame near three seconds and supports short histories",()=> {
+    var h=new RewindHistory();
+    for (var i=0;i<60;i++) h.Record(new(i*.1,new(i,0,0),default,default,100-i,20));
+    var frame=h.Candidates(5.9,3).First();
+    Check(frame.Time<=2.901 && frame.Time>=2.799 && frame.Position.X<=29 && frame.Health>=71,"wrong rewind age/state");
+    Check(h.Candidates(1,3).First().Time==0,"short history did not use earliest safe sample");
+    h.Clear(); Check(!h.Candidates(10,3).Any(),"history cleanup");
+}));
+tests.Add(("Rewind memory is bounded and never retains old-round history",()=> {
+    var h=new RewindHistory();
+    for (var i=0;i<5000;i++) h.Record(new(i*.01,default,default,default,500,100));
+    Check(h.Count<=128 && h.Candidates(50,3).All(f=>f.Time>=39.9),"unbounded history");
+    h.Clear(); Check(h.Count==0,"round cleanup failed");
 }));
 var failed=0;
 foreach (var (name,action) in tests)

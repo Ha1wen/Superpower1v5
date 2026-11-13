@@ -58,17 +58,3 @@ public sealed class Knockback() : Power("knockback")
     }
     public override void Cleanup(PowerContext context) => _pending.Clear();
 }
-
-public sealed class SecondChance() : Power("second_chance")
-{
-    public override bool PreventLethal(PowerContext context, DamageEvent damage)
-    {
-        if (!damage.BossVictim || context.Pawn is not { } pawn || damage.Info is not { } info || info.Damage < pawn.Health ||
-            !context.Loadout.Consumed.Add(Id)) return false;
-        pawn.Health = (int)Settings(context).Strength;
-        Utilities.SetStateChanged(pawn, "CBaseEntity", "m_iHealth");
-        context.Plugin.Broadcast($"{context.Boss!.PlayerName} used SECOND CHANCE!");
-        context.Boss.PrintToCenter("SECOND CHANCE\nLethal hit prevented — health restored!");
-        return true;
-    }
-}

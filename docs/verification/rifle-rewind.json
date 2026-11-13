@@ -1,0 +1,10 @@
+[
+  {
+    "name": "Rifle-only bot scenario starts with a clear firing line",
+    "passed": true
+  },
+  {
+    "name": "Second Chance survives actual rifle bullets and keeps the round active",
+    "passed": true
+  }
+]

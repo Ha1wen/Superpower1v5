@@ -1,22 +1,114 @@
 [
   {
-    "name": "Direct kill selects one of all six living players without blast effects or Vampirism healing",
+    "name": "One T boss and five CT players; all 18 powers apply",
     "passed": true
   },
   {
-    "name": "Direct kill stays blocked at 19 seconds",
+    "name": "Juggernaut has 500 HP, takes damage, heals normally and restores 100 HP on removal",
     "passed": true
   },
   {
-    "name": "After 20 seconds the next kill excludes dead players and still includes the boss",
+    "name": "Second Chance records its rewind history",
     "passed": true
   },
   {
-    "name": "Selecting the boss kills them even with Second Chance and safely clears their powers",
+    "name": "Lethal native damage rewinds position and restores health without a death",
     "passed": true
   },
   {
-    "name": "Following a boss self-kill the next round has normal health and one boss with two powers",
+    "name": "Second Chance only protects once per round",
+    "passed": true
+  },
+  {
+    "name": "The same T player stays boss after a round restart",
+    "passed": true
+  },
+  {
+    "name": "Cluster creates four hegrenade_projectile projectiles (item 44)",
+    "passed": true
+  },
+  {
+    "name": "Four hegrenade_projectile copies do not split recursively",
+    "passed": true
+  },
+  {
+    "name": "All four hegrenade_projectile utilities actually activate (item 44)",
+    "passed": true
+  },
+  {
+    "name": "Cluster creates four flashbang_projectile projectiles (item 43)",
+    "passed": true
+  },
+  {
+    "name": "Four flashbang_projectile copies do not split recursively",
+    "passed": true
+  },
+  {
+    "name": "All four flashbang_projectile utilities actually activate (item 43)",
+    "passed": true
+  },
+  {
+    "name": "Cluster creates four smokegrenade_projectile projectiles (item 45)",
+    "passed": true
+  },
+  {
+    "name": "Four smokegrenade_projectile copies do not split recursively",
+    "passed": true
+  },
+  {
+    "name": "All four smokegrenade_projectile utilities actually activate (item 45)",
+    "passed": true
+  },
+  {
+    "name": "Cluster creates four molotov_projectile projectiles (item 46)",
+    "passed": true
+  },
+  {
+    "name": "Four molotov_projectile copies do not split recursively",
+    "passed": true
+  },
+  {
+    "name": "All four molotov_projectile utilities actually activate (item 46)",
+    "passed": true
+  },
+  {
+    "name": "Cluster creates four molotov_projectile projectiles (item 48)",
+    "passed": true
+  },
+  {
+    "name": "Four molotov_projectile copies do not split recursively",
+    "passed": true
+  },
+  {
+    "name": "All four molotov_projectile utilities actually activate (item 48)",
+    "passed": true
+  },
+  {
+    "name": "Cluster creates four decoy_projectile projectiles (item 47)",
+    "passed": true
+  },
+  {
+    "name": "Four decoy_projectile copies do not split recursively",
+    "passed": true
+  },
+  {
+    "name": "All four decoy_projectile utilities actually activate (item 47)",
+    "passed": true
+  },
+  {
+    "name": "Real weapon rewind scenario prepares",
+    "passed": true
+  },
+  {
+    "name": "Second Chance intercepts an actual bot-fired lethal bullet",
+    "passed": true
+  },
+  {
+    "name": "Real weapon test completed and plugin stayed enabled",
+    "passed": true
+  },
+  {
+    "name": "Final round has one permanent T boss, two powers and normal health",
     "passed": true
   }
 ]

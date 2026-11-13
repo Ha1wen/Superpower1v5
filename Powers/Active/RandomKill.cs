@@ -12,7 +12,7 @@ public sealed class RandomKill(Random? random=null) : Power("random_explosion")
         if (candidates.Length==0) return false;
         var target=candidates[_random.Next(candidates.Length)];
         if (Players.AlivePawn(target) is not { } pawn) return false;
-        context.Plugin.Broadcast($"Random Kill selected {target.PlayerName}!");
+        context.Tell($"Random Kill selected {target.PlayerName}!");
         pawn.CommitSuicide(explode:false,force:true);
         return true;
     }

@@ -17,18 +17,17 @@ public sealed class FeedbackManager(Plugin plugin)
         plugin.Broadcast($"SUPERPOWER ROUND | PLAYER: {boss.PlayerName}");
         for (var i=0;i<2;i++)
         {
-            var p=loadout.Powers[i]; plugin.Broadcast($"POWER {i+1}: {p.Name.ToUpperInvariant()}");
+            var p=loadout.Powers[i]; boss.PrintToChat(Plugin.Prefix+$"POWER {i+1}: {p.Name.ToUpperInvariant()}");
             boss.PrintToChat(Plugin.Prefix+p.Description);
         }
         if (plugin.Config.EnableHUD)
-            foreach (var p in Utilities.GetPlayers().Where(Players.Connected))
-                p.PrintToCenter($"SUPERPOWER ROUND\n{boss.PlayerName}\n{loadout.Powers[0].Name} + {loadout.Powers[1].Name}");
+            boss.PrintToCenter($"YOUR POWERS\n{loadout.Powers[0].Name} + {loadout.Powers[1].Name}");
         Ability();
     }
     public void Ability()
     {
         if (plugin.Config.EnableSounds && Players.AlivePawn(plugin.Mode.Boss) is { } pawn)
-            pawn.EmitSound("Buttons.snd9");
+            pawn.EmitSound("Buttons.snd9",new RecipientFilter(plugin.Mode.Boss!));
     }
     public void Blast(Vector origin)
     {

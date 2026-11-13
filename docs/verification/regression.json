@@ -1,0 +1,66 @@
+[
+  {
+    "name": "Six bots: one boss, five opponents, exactly two powers and 100 HP",
+    "passed": true
+  },
+  {
+    "name": "All 18 powers construct and apply in the engine",
+    "passed": true
+  },
+  {
+    "name": "Vampirism heals 100% of primary and secondary health damage",
+    "passed": true
+  },
+  {
+    "name": "A null native result plus player_hurt fallback keeps effects working",
+    "passed": true
+  },
+  {
+    "name": "Slot assignment swaps existing powers without resetting cooldown",
+    "passed": true
+  },
+  {
+    "name": "Speed is 2.5x and both gravity fields restore on cleanup",
+    "passed": true
+  },
+  {
+    "name": "Unlimited teleport reaches beyond the old 450-unit distance",
+    "passed": true
+  },
+  {
+    "name": "Invisibility applies automatically, reports active, and restores color",
+    "passed": true
+  },
+  {
+    "name": "Infinite ammo refills an equipped firearm",
+    "passed": true
+  },
+  {
+    "name": "Knockback schedules an impulse after native bullet damage",
+    "passed": true
+  },
+  {
+    "name": "Knockback produces real displacement after several physics frames",
+    "passed": true
+  },
+  {
+    "name": "Wall Vision creates and cleans five opponent outline pairs",
+    "passed": true
+  },
+  {
+    "name": "Gravity physics sample starts in clear air",
+    "passed": true
+  },
+  {
+    "name": "Low Gravity reduces actual falling acceleration",
+    "passed": true
+  },
+  {
+    "name": "Second Chance prevents a real lethal hit and records consumption",
+    "passed": true
+  },
+  {
+    "name": "Next round retains the chosen T boss and the 1v5/two-power invariants",
+    "passed": true
+  }
+]

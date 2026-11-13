@@ -1,5 +1,6 @@
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
+using Microsoft.Extensions.Logging;
 using Superpower1v5.Powers;
 using Superpower1v5.Managers;
 using Superpower1v5.Models;
@@ -55,8 +56,12 @@ public sealed partial class Plugin
     }
     private HookResult BeforeDamage(CCSPlayerPawn p,CTakeDamageInfo info)
     {
-        if (!Mode.CanUsePowers || info.Damage<=0 || Describe(p,info) is not { } hit) return HookResult.Continue;
+        if (!Config.Enabled || !Mode.Live || info.Damage<=0 || Describe(p,info) is not { } hit) return HookResult.Continue;
         _healthBeforeDamage[p.EntityHandle.Raw]=(p.Health,Server.TickCount,info.BitsDamageType);
+#if SERVER_SMOKE
+        if (ProbeDirectory.Contains("rewind-gun-native",StringComparison.OrdinalIgnoreCase) && hit.BossVictim)
+            Logger.LogInformation("GUN BEFORE health={Health}, damage={Damage}, total={Total}, hit={Hit}",p.Health,info.Damage,info.TotalledDamage,info.HitGroupId);
+#endif
         return Powers.BeforeDamage(hit) ? HookResult.Handled : HookResult.Continue;
     }
     private void PlayerHurt(EventPlayerHurt hurt)
