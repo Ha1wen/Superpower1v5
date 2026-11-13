@@ -43,3 +43,5 @@ Implementation references: [CounterStrikeSharp API source](https://github.com/ro
 ## Deployment
 
 ConfigVersion 7 adds the switches and fade timing while preserving existing power tuning. Deployment backs up the previous JSON before migrating it. The install ZIP contains only the plugin, configuration, manifest and instructions; it excludes the server and framework binaries.
+
+Live deployment confirmed v1.7.0 with 18 powers at 22:40:26 JST. Source and installed production DLL SHA256: `d582712c6ed773999055686c7c6d38933dabe172123ddf6dfca3e41c7d671e08`. The seven ZIP entries were validated against their staged bytes; ZIP SHA256: `7808bf653e1386576a2f941a63d8d2f7c2499d13d9f85b856144e68bde801bec`. All pre-existing power tuning was compared with the backup and preserved. The three switches remain off. Both original live server/client processes remained running.
