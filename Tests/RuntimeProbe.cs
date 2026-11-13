@@ -13,6 +13,7 @@ namespace Superpower1v5;
 public sealed partial class Plugin
 {
     private readonly List<object> _probeResults=[];
+    private readonly List<string> _probeBroadcasts=[];
     private bool _probeStarted;
     private string? _probeFirstBoss;
     private string ProbeDirectory => Environment.GetEnvironmentVariable("SUPERPOWER1V5_PROBE_ARTIFACTS") ??
@@ -46,6 +47,8 @@ public sealed partial class Plugin
         { ScheduleTeamPowerTests(); return; }
         if (ProbeDirectory.Contains("rewind-gun-native",StringComparison.OrdinalIgnoreCase))
         { ScheduleGunRewindProbe(); return; }
+        if (ProbeDirectory.Contains("round-options-native",StringComparison.OrdinalIgnoreCase))
+        { ScheduleRoundOptionsProbe(); return; }
         AddTimer(12,NativeFeedbackProbe,TimerFlags.STOP_ON_MAPCHANGE);
         AddTimer(13,GravityPhysicsProbe,TimerFlags.STOP_ON_MAPCHANGE);
         AddTimer(16,()=> {
@@ -140,10 +143,10 @@ public sealed partial class Plugin
             pawn.EyeAngles.X=oldAngles.X; pawn.EyeAngles.Y=oldAngles.Y;
             Require(farthest>450,$"maximum reachable test blink {farthest:0} units");
         });
-        Probe("Invisibility applies automatically, reports active, and restores color",()=> {
+        Probe("Invisibility starts visible, needs no activation, and restores color",()=> {
             Powers.NativeProbePair("teleport","infinite_ammo"); var pawn=Players.AlivePawn(Mode.Boss)!; var color=pawn.Render;
             Powers.NativeProbePair("invisibility","infinite_ammo");
-            Require(Effects.HiddenEntityCount>0 && Powers.Status("invisibility")=="active until round ends","automatic application");
+            Require(Powers.Active[0].IsActive && Powers.Status("invisibility")=="visible (sound)" && Effects.HiddenEntityCount==0,"automatic application");
             Powers.NativeProbePair("teleport","infinite_ammo"); Require(pawn.Render==color && Effects.HiddenEntityCount==0,"cleanup");
         });
         Probe("Infinite ammo refills an equipped firearm",()=> {

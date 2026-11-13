@@ -9,25 +9,47 @@ namespace Superpower1v5.Managers;
 public sealed class FeedbackManager(Plugin plugin)
 {
     private double _nextHud;
-    private double _centerReservedUntil;
-    public void ReserveCenter(double until) => _centerReservedUntil=until;
+    private readonly Dictionary<uint,double> _centerReservedUntil=new();
+    private int _revealedGeneration=-1;
+    public void ReserveCenter(double until,CCSPlayerController? player=null)
+    { if ((player ?? plugin.Mode.Boss) is { } owner) _centerReservedUntil[owner.EntityHandle.Raw]=until; }
     public void Round()
     {
-        if (plugin.Mode.Boss is not { } boss || plugin.Powers.Loadout is not { } loadout) return;
+        if (plugin.Mode.Boss is not { } boss || plugin.Powers.Loadout is null) return;
+        _centerReservedUntil.Clear(); _nextHud=0;
         plugin.Broadcast($"SUPERPOWER ROUND | PLAYER: {boss.PlayerName}");
+        foreach (var player in plugin.Powers.PoweredPlayers) Loadout(player);
+    }
+    public void Loadout(CCSPlayerController player)
+    {
+        if (plugin.Powers.GetLoadout(player) is not { } loadout) return;
         for (var i=0;i<2;i++)
         {
-            var p=loadout.Powers[i]; boss.PrintToChat(Plugin.Prefix+$"POWER {i+1}: {p.Name.ToUpperInvariant()}");
-            boss.PrintToChat(Plugin.Prefix+p.Description);
+            var p=loadout.Powers[i]; player.PrintToChat(Plugin.Prefix+$"POWER {i+1}: {p.Name.ToUpperInvariant()}");
+            player.PrintToChat(Plugin.Prefix+p.Description);
         }
         if (plugin.Config.EnableHUD)
-            boss.PrintToCenter($"YOUR POWERS\n{loadout.Powers[0].Name} + {loadout.Powers[1].Name}");
-        Ability();
+            player.PrintToCenter($"YOUR POWERS\n{loadout.Powers[0].Name} + {loadout.Powers[1].Name}");
+        Ability(player);
+        if (plugin.Config.PublicPowerAnnouncements) PublicLoadout(player);
     }
-    public void Ability()
+    public void PublicLoadout(CCSPlayerController player)
     {
-        if (plugin.Config.EnableSounds && Players.AlivePawn(plugin.Mode.Boss) is { } pawn)
-            pawn.EmitSound("Buttons.snd9",new RecipientFilter(plugin.Mode.Boss!));
+        if (plugin.Powers.GetLoadout(player) is { } loadout)
+            plugin.Broadcast($"{player.PlayerName}'s powers: {string.Join(" + ",loadout.Powers.Select(p=>p.Name))}");
+    }
+    public void RevealRound()
+    {
+        if (_revealedGeneration==plugin.Mode.Generation) return;
+        _revealedGeneration=plugin.Mode.Generation;
+        foreach (var reveal in plugin.Powers.Reveals)
+            plugin.Broadcast($"ROUND REVEAL | {reveal.PlayerName}: {string.Join(" + ",reveal.Powers.Select(p=>p.Name))}");
+    }
+    public void Ability(CCSPlayerController? player=null)
+    {
+        player ??=plugin.Mode.Boss;
+        if (plugin.Config.EnableSounds && Players.AlivePawn(player) is { } pawn)
+            pawn.EmitSound("Buttons.snd9",new RecipientFilter(player!));
     }
     public void Blast(Vector origin)
     {
@@ -47,9 +69,13 @@ public sealed class FeedbackManager(Plugin plugin)
     }
     public void Hud()
     {
-        if (!plugin.Config.EnableHUD || !plugin.Mode.CanUsePowers || Server.CurrentTime<_nextHud || Server.CurrentTime<_centerReservedUntil || plugin.Powers.Loadout is not { } loadout) return;
+        if (!plugin.Config.EnableHUD || Server.CurrentTime<_nextHud) return;
         _nextHud=Server.CurrentTime+2;
-        var lines=loadout.Powers.Select((p,i)=>$"{i+1}. {p.Name}: {plugin.Powers.Status(p.Id)}");
-        plugin.Mode.Boss!.PrintToCenter(string.Join("\n",lines));
+        foreach (var player in plugin.Powers.PoweredPlayers)
+        {
+            if (!plugin.Mode.CanUsePlayerPowers(player) || Server.CurrentTime<_centerReservedUntil.GetValueOrDefault(player.EntityHandle.Raw) || plugin.Powers.GetLoadout(player) is not { } loadout) continue;
+            var lines=loadout.Powers.Select((p,i)=>$"{i+1}. {p.Name}: {plugin.Powers.Status(p.Id,player)}");
+            player.PrintToCenter(string.Join("\n",lines));
+        }
     }
 }

@@ -15,13 +15,21 @@ public sealed class FrozenPlayers
         public Vector Velocity { get; }=Players.Copy(pawn.AbsVelocity);
         public float? NextAttack { get; }=pawn.WeaponServices?.As<CCSPlayer_WeaponServices>().NextAttack;
         public Dictionary<uint,WeaponState> Weapons { get; }=new();
+        public Dictionary<FrozenPlayers,double> Owners { get; }=new();
     }
+    private static readonly Dictionary<uint,State> Shared=new();
     private readonly Dictionary<uint,State> _players=new();
     public int Count => _players.Count;
     public void Hold(CCSPlayerPawn pawn,double until)
     {
         var raw=pawn.EntityHandle.Raw;
-        if (!_players.TryGetValue(raw,out var state)) _players[raw]=state=new(pawn);
+        if (!_players.TryGetValue(raw,out var state))
+        {
+            if (!Shared.TryGetValue(raw,out state)) Shared[raw]=state=new(pawn);
+            _players[raw]=state;
+        }
+        state.Owners[this]=until;
+        until=state.Owners.Values.Max();
         // FL_FROZEN also suppresses native damage in CS2. Lock movement and attack clocks
         // instead so Sandevistan targets remain vulnerable to bullets and other powers.
         pawn.MoveType=MoveType_t.MOVETYPE_NONE; pawn.ActualMoveType=MoveType_t.MOVETYPE_NONE;
@@ -46,6 +54,9 @@ public sealed class FrozenPlayers
     {
         foreach (var (raw,state) in _players)
         {
+            state.Owners.Remove(this);
+            if (state.Owners.Count>0) continue;
+            Shared.Remove(raw);
             var pawn=Players.Entity<CCSPlayerPawn>(raw);
             if (pawn is { IsValid:true })
             {

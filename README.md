@@ -1,18 +1,22 @@
 # Superpower 1v5
 
-A CounterStrikeSharp plugin for CS2: the player who chooses **T stays the boss** and receives **two different private random powers** against up to five CT opponents. The boss is never rotated or selected from CT. Players normally start at **100 HP**; Juggernaut gives the boss **500 HP**. All **18 powers have equal selection chances**, without rarity tiers.
+A CounterStrikeSharp plugin for CS2: by default, the player who chooses **T stays the boss** and receives **two different private random powers** against up to five CT opponents. Server commands can enable random boss promotion, public power announcements, or powers for every active player. Players normally start at **100 HP**; Juggernaut gives its owner **500 HP**. All **18 powers have equal selection chances**, without rarity tiers.
 
 This repository contains the plugin, build tools, tests, configuration template and install ZIP. CS2 server files, Metamod, CounterStrikeSharp binaries, credentials, logs and local backups are excluded.
 
-## Install v1.6.0
+## Install v1.7.0
 
-Download [Superpower1v5-v1.6.0.zip](releases/Superpower1v5-v1.6.0.zip) and extract it into your server's `game/csgo/` directory, merging the `addons/` folder. Hosting panels that open directly in `csgo/` should extract there. Back up an existing plugin/config before replacing it, then restart the server.
+Download [Superpower1v5-v1.7.0.zip](releases/Superpower1v5-v1.7.0.zip) and extract it into your server's `game/csgo/` directory, merging the `addons/` folder. Hosting panels that open directly in `csgo/` should extract there. Back up an existing plugin/config before replacing it, then restart the server.
 
 ## Boss selection and privacy
 
-Choose T to become the boss. You remain T and keep the role across rounds until you leave or switch teams. Only one human can occupy T; another player's T request is rejected while that slot is occupied. A human explicitly choosing T can replace a bot boss. If nobody chooses T, CT players are not automatically promoted. Extra players above the six-player limit become spectators.
+With `css_sp_random_boss 0` (default), choose T to become the boss and retain the role until you leave or switch teams. Only one human can occupy T; a human explicitly choosing T can replace a bot boss. Without a T player, CT players are not promoted. `css_sp_random_boss 1` instead selects a boss each round from active T/CT players, prefers humans when available, and chooses a different person when the pool permits. The selected boss moves to T; the former boss moves to CT. `css_sp_setboss` overrides the next selection. Extra players above the six-player limit become spectators.
 
-Only the boss receives their assigned power names, descriptions, cooldown HUD and activation messages/sounds. Other players receive general round announcements. Client-side admin diagnostics also hide assigned IDs from non-boss players; the server console can still inspect them. Visible gameplay effects naturally reveal what happens, but the plugin does not announce the loadout to opponents.
+With `css_sp_showpowers 0` (default), assigned names, descriptions, cooldown HUD and activation messages/sounds go only to their owner. `css_sp_showpowers 1` publicly announces assigned pairs during the round. Regardless of that setting, **every round ends with a public power reveal**, including players who died, disconnected or had their powers removed. Client admin diagnostics hide the boss's assigned IDs while private; the server console can inspect them. Visible gameplay effects can naturally reveal an ability.
+
+`css_sp_everyone 1` immediately gives every active T/CT player their own random pair, with separate cooldowns, one-use state and effects. This continues on future rounds and respawns. Spectators receive no active effects. `css_sp_everyone 0` removes CT powers while retaining the boss's current pair and cooldowns. Team sizes remain one T versus up to five CT players.
+
+All three commands accept `0`, `1` or `toggle`; no argument shows the current setting. Changes are saved to the plugin configuration. Random promotion applies next round; the other two settings apply immediately.
 
 Requires **Metamod:Source**, **CounterStrikeSharp API 1.0.380.0** and its **.NET 10 runtime**. Tested on Windows; other operating systems have not been verified. The package includes the production DLL, dependencies manifest, debugging symbols, configuration and install instructions. No compilation is required to install it.
 
@@ -30,14 +34,14 @@ Run `css_plugins list` and `css_sp_debug` in the server console to verify loadin
 | ID | Default behavior |
 |---|---|
 | `super_speed` | 2.5x movement speed |
-| `vampirism` | Heal 100% of actual health damage dealt, capped at 100 HP |
-| `invisibility` | Hide the body, weapons and attached equipment from other clients; keep the boss's own view |
+| `vampirism` | Heal 100% of actual health damage dealt, up to the owner's maximum HP |
+| `invisibility` | Sound reveals you immediately; after 0.5 seconds of silence, fade out over 1 second. Shift/crouch walking stays quiet |
 | `teleport` | Aim-directed safe teleport; no configured range cap, 15-second cooldown |
 | `explosive_bullets` | 55 base blast damage, radius 180, distance falloff and wall checks |
 | `infinite_ammo` | Refill the active firearm's normal magazine |
 | `rapid_fire` | 1.6x server firing rate |
 | `low_gravity` | 0.35x personal gravity |
-| `wall_vision` | Automatically reveal opponents with boss-only outlines, radar and bearings |
+| `wall_vision` | Automatically reveal opponents with outlines, radar and bearings visible only to the owner |
 | `knockback` | Bullet hits push opponents with an 800-unit horizontal impulse and lift |
 | `second_chance` | Once per round, prevent lethal damage and rewind position, facing, velocity, health and armor by three seconds |
 | `bhop` | Hold jump to hop automatically on landing |
@@ -48,13 +52,15 @@ Run `css_plugins list` and `css_sp_debug` in the server console to verify loadin
 | `juggernaut` | 500 starting/max HP while assigned; restores the normal cap on removal |
 | `cluster_grenade` | Each thrown HE, flash, smoke, Molotov, incendiary or decoy becomes four projectiles of that type |
 
-Wall Vision, Invisibility and Juggernaut need **no activation**. Cluster Grenade works automatically on the boss's thrown utility, adding three copies for four total; copies cannot split again. Juggernaut can combine with healing/rewind up to its 500 HP cap. Random Kill retains the `random_explosion` ID, creates no explosion, and can kill the boss even with Second Chance. Its legacy Strength field and Invisibility's former alpha field are unused. Yoru Flash and rarity tiers remain removed.
+Wall Vision, Invisibility and Juggernaut need **no activation**. Invisibility responds to shots, reloads (through their full duration), normal running/footsteps, jumps/landings, grenade throws, audible pickups, scope sounds, damage and bomb planting/defusing. Quiet timing is configurable with `InvisibilityQuietDelay` and `InvisibilityFadeDuration`. At full concealment, body, weapons and attachments are filtered from other clients' transmissions; the owner's first-person view remains usable.
 
-With all 18 powers enabled, each has about a 5.56% chance in either slot and an 11.11% chance of appearing in the pair. Disabled/blacklisted powers are excluded. Configure powers in [Superpower1v5.example.json](Superpower1v5.example.json); keep at least two different powers available. ConfigVersion 6 adds the new powers and three-second rewind and fixes the boss side to T with rotation disabled. Existing unrelated tuning is preserved.
+Cluster Grenade works on its owner's thrown utility, adding three copies for four total; copies cannot split again. Juggernaut can combine with healing/rewind up to its 500 HP cap. Random Kill retains the `random_explosion` ID, creates no explosion, and can kill its owner even with Second Chance. Its legacy Strength field and Invisibility's former alpha field are unused. Yoru Flash and rarity tiers remain removed.
+
+With all 18 powers enabled, each has about a 5.56% chance in either slot and an 11.11% chance of appearing in a pair. Disabled/blacklisted powers are excluded. Configure powers in [Superpower1v5.example.json](Superpower1v5.example.json); keep at least two different powers available. ConfigVersion 7 adds the three switches and invisibility timing. Existing unrelated tuning is preserved.
 
 ## Commands
 
-Players can use `!power`, `!powers`, `!cooldowns`, `!ability1`, `!ability2` and `!help`. Only the living boss can activate an active power after freeze time. Passive/triggered powers work automatically.
+Players can use `!power`, `!powers`, `!cooldowns`, `!ability1`, `!ability2` and `!help`. Every living powered player can activate their own active abilities after freeze time. Passive/triggered powers work automatically.
 
 Client key binds:
 
@@ -69,9 +75,12 @@ Administrator commands require `@css/generic` in CounterStrikeSharp. The server 
 |---|---|
 | `css_sp_enable` / `css_sp_disable` | Enable the mode or clean up its effects |
 | `css_sp_reload` | Reload and validate configuration |
+| `css_sp_random_boss [0\|1\|toggle]` | Random boss promotion next round; default off |
+| `css_sp_showpowers [0\|1\|toggle]` | Public loadout announcements during the round; default off; round-end reveal is always public |
+| `css_sp_everyone [0\|1\|toggle]` | Give every active player two powers immediately and on future rounds; default off |
 | `css_sp_setboss <player>` | Admin override: move the chosen player to T and restart the challenge |
 | `css_sp_reroll` | Reroll both powers, retaining current-round cooldowns/one-use state |
-| `css_sp_give <player> <power_id> [1\|2]` | Replace one of the current boss's two powers |
+| `css_sp_give <player> <power_id> [1\|2]` | Replace one of a living powered player's two powers |
 | `css_sp_remove <player>` | Remove boss powers and restart the challenge |
 | `css_sp_list` / `css_sp_debug` | List power IDs or inspect the roster/powers |
 
@@ -109,7 +118,7 @@ From a checkout anywhere on disk:
 .\tools\Build.ps1 -CounterStrikeSharpPath 'C:\your-server\game\csgo\addons\counterstrikesharp\api'
 ```
 
-`Build.ps1` builds Release, runs the 27 automated checks and regenerates the example config. Output: `bin/Release/net10.0/`. If `dotnet` is not on PATH, pass `-DotnetPath 'C:\path\to\dotnet.exe'`. The existing `server/development/Superpower1v5` layout is also supported without arguments.
+`Build.ps1` builds Release, runs the 31 automated checks and regenerates the example config. Output: `bin/Release/net10.0/`. If `dotnet` is not on PATH, pass `-DotnetPath 'C:\path\to\dotnet.exe'`. The existing `server/development/Superpower1v5` layout is also supported without arguments.
 
 To install the built output into a chosen server:
 
@@ -121,9 +130,9 @@ Deployment backs up and migrates an existing plugin config before replacing the 
 
 ## Verification and limits
 
-See [verification notes](docs/VERIFICATION.md), [native gameplay results](docs/verification/native-gameplay.json) and [actual rifle rewind results](docs/verification/rifle-rewind.json). Checks cover selection, permanent T ownership, privacy routing, configuration, permissions, bounded rewind history, concealment, 500 HP lifecycle, live utility activation and native/actual-weapon damage paths.
+See [verification notes](docs/VERIFICATION.md), [round options and multiplayer results](docs/verification/round-options.json) and [actual rifle rewind results](docs/verification/rifle-rewind.json). Checks cover mode switches, per-player power ownership, privacy/reveals, sound-based concealment, configuration, permissions, bounded rewind history, health, utility splitting and native/actual-weapon damage paths.
 
-Invisibility filters outgoing entity transmission for the boss and attached equipment instead of relying on model transparency. Thrown utility remains visible; detached items return to normal transmission on refresh. Human rendering still needs client playtesting.
+Invisibility uses model alpha during the fade and filters outgoing entity transmission for the body and attached equipment at full concealment. Thrown utility remains visible; detached items return to normal transmission on refresh. Human rendering still needs client playtesting.
 
 Second Chance records up to ten seconds of history, selects a safe location about three seconds before the lethal hit, and makes a small upward adjustment when needed for floor clearance. Short histories use the earliest available safe sample. It zeroes incoming damage before the engine applies it, provides a 0.4-second recovery window and reapplies the teleport after the damage flow to avoid lag-compensation rollback. Unsafe historical locations are skipped; if none are clear, health recovery stays at the current location. Direct forced deaths such as Random Kill bypass it.
 

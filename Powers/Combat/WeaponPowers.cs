@@ -13,7 +13,7 @@ public sealed class RapidFire() : Power("rapid_fire")
         var raw = c.Pawn?.WeaponServices?.ActiveWeapon.Value?.EntityHandle.Raw;
         if (raw is null) return;
         c.Plugin.Defer(() => {
-            if (!c.Plugin.Powers.Active.Contains(this)) return;
+            if (!c.Contains(this)) return;
             var w = Players.Entity<CBasePlayerWeapon>(raw.Value);
             if (!Players.Firearm(w) || c.Pawn is not { } p || w!.OwnerEntity.Raw != p.EntityHandle.Raw) return;
             _original[raw.Value] = (w.NextPrimaryAttackTick,w.NextPrimaryAttackTickRatio);

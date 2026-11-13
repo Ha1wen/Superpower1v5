@@ -18,6 +18,9 @@ public sealed class EffectsManager
     private readonly Dictionary<(uint pawn, bool gravity), Scalar> _scalars = new();
     private readonly Dictionary<uint, (Color color, RenderMode_t mode)> _colors = new();
     private readonly Dictionary<uint, (int word, uint bit, bool hadBit, bool spotted)> _radar = new();
+    private sealed class RadarBaseline(bool spotted)
+    { public bool Spotted { get; }=spotted; public HashSet<EffectsManager> Owners { get; }=[]; }
+    private static readonly Dictionary<uint,RadarBaseline> SharedRadar=new();
     private readonly Dictionary<uint, Outline> _outlines = new();
     private Outline[] _transmitOutlines = [];
     private sealed record Concealed(uint Viewer,uint[] Indices);
@@ -25,7 +28,7 @@ public sealed class EffectsManager
     public int OutlineCount => _outlines.Count;
     public int HiddenEntityCount => Volatile.Read(ref _concealed)?.Indices.Length ?? 0;
     public bool HiddenFrom(uint viewer,uint entityIndex) => Volatile.Read(ref _concealed) is { } hidden && hidden.Viewer!=viewer && Array.IndexOf(hidden.Indices,entityIndex)>=0;
-    public void Conceal(CCSPlayerPawn pawn,CCSPlayerController viewer)
+    public IReadOnlyList<CEntityInstance> AttachedEntities(CCSPlayerPawn pawn)
     {
         var owned=new Dictionary<uint,uint> { [pawn.EntityHandle.Raw]=pawn.Index };
         var entities=Utilities.GetAllEntities().Where(e=>e.IsValid).ToArray();
@@ -43,8 +46,10 @@ public sealed class EffectsManager
             }
             if (!added) break;
         }
-        Volatile.Write(ref _concealed,new(viewer.EntityHandle.Raw,owned.Values.ToArray()));
+        return entities.Where(e=>e.IsValid && owned.ContainsKey(e.EntityHandle.Raw)).ToArray();
     }
+    public void Conceal(CCSPlayerPawn pawn,CCSPlayerController viewer,IReadOnlyList<CEntityInstance>? attached=null) =>
+        Volatile.Write(ref _concealed,new(viewer.EntityHandle.Raw,(attached ?? AttachedEntities(pawn)).Select(e=>e.Index).Append(pawn.Index).Distinct().ToArray()));
     public void ClearConcealment() => Volatile.Write(ref _concealed,null);
 
     public void Speed(CCSPlayerPawn pawn, string source, float amount) => SetScalar(pawn, source, amount, false);
@@ -111,6 +116,11 @@ public sealed class EffectsManager
         var slot = viewer.Slot;
         if (slot is < 0 or > 63) return;
         var word = slot / 32; var bit = 1u << (slot % 32); var state = pawn.EntitySpottedState;
+        if (!_radar.ContainsKey(pawn.EntityHandle.Raw))
+        {
+            if (!SharedRadar.TryGetValue(pawn.EntityHandle.Raw,out var baseline)) SharedRadar[pawn.EntityHandle.Raw]=baseline=new(state.Spotted);
+            baseline.Owners.Add(this);
+        }
         _radar.TryAdd(pawn.EntityHandle.Raw, (word, bit, (state.SpottedByMask[word] & bit) != 0, state.Spotted));
         state.SpottedByMask[word] |= bit; state.Spotted = true;
         Utilities.SetStateChanged(pawn, "CCSPlayerPawn", "m_entitySpottedState");
@@ -175,10 +185,11 @@ public sealed class EffectsManager
     }
     // CheckTransmit may run on networking workers. Only read an immutable index snapshot here.
     public void FilterTransmission(CCheckTransmitInfoList clients)
+    { FilterOutlines(clients); FilterConcealed(clients); }
+    public void FilterOutlines(CCheckTransmitInfoList clients)
     {
         var outlines = Volatile.Read(ref _transmitOutlines);
-        var hidden=Volatile.Read(ref _concealed);
-        if (outlines.Length == 0 && hidden is null) return;
+        if (outlines.Length == 0) return;
         foreach (var (info, viewer) in clients)
         {
             var raw = viewer?.EntityHandle.Raw;
@@ -187,9 +198,14 @@ public sealed class EffectsManager
                 if (raw == outline.Viewer) { info.TransmitEntities.Add(outline.RelayIndex); info.TransmitEntities.Add(outline.GlowIndex); }
                 else { info.TransmitEntities.Remove(outline.RelayIndex); info.TransmitEntities.Remove(outline.GlowIndex); }
             }
-            if (hidden is not null && raw!=hidden.Viewer)
-                foreach (var index in hidden.Indices) info.TransmitEntities.Remove(index);
         }
+    }
+    public void FilterConcealed(CCheckTransmitInfoList clients)
+    {
+        if (Volatile.Read(ref _concealed) is not { } hidden) return;
+        foreach (var (info,viewer) in clients)
+            if (viewer?.EntityHandle.Raw!=hidden.Viewer)
+                foreach (var index in hidden.Indices) info.TransmitEntities.Remove(index);
     }
     public void PruneOutlines(ISet<uint> living)
     { foreach (var target in _outlines.Keys.Where(raw => !living.Contains(raw)).ToArray()) RemoveOutline(target); }
@@ -205,10 +221,16 @@ public sealed class EffectsManager
         foreach (var raw in _outlines.Keys.ToArray()) RemoveOutline(raw);
         foreach (var (raw, old) in _radar)
         {
+            var originalSpotted=old.spotted;
+            if (SharedRadar.TryGetValue(raw,out var baseline))
+            {
+                originalSpotted=baseline.Spotted; baseline.Owners.Remove(this);
+                if (baseline.Owners.Count==0) SharedRadar.Remove(raw);
+            }
             var pawn = Players.Entity<CCSPlayerPawn>(raw); if (pawn is not { IsValid: true }) continue;
             var state = pawn.EntitySpottedState;
             if (!old.hadBit) state.SpottedByMask[old.word] &= ~old.bit;
-            state.Spotted = old.spotted || state.SpottedByMask[0] != 0 || state.SpottedByMask[1] != 0;
+            state.Spotted = originalSpotted || state.SpottedByMask[0] != 0 || state.SpottedByMask[1] != 0;
             Utilities.SetStateChanged(pawn, "CCSPlayerPawn", "m_entitySpottedState");
         }
         _radar.Clear();

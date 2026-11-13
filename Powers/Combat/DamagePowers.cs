@@ -41,7 +41,7 @@ public sealed class Knockback() : Power("knockback")
         // The hurt flow and grounded movement can overwrite an impulse applied synchronously.
         context.Plugin.Defer(() =>
         {
-            if (!_pending.Remove(raw, out var impulse) || !context.Plugin.Powers.Active.Contains(this)) return;
+            if (!_pending.Remove(raw, out var impulse) || !context.Contains(this)) return;
             var target = Players.Entity<CCSPlayerPawn>(raw);
             if (target is not { IsValid: true, Health: > 0 } || target.AbsOrigin is not { } origin) return;
             var x = target.AbsVelocity.X + impulse.x;

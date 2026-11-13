@@ -11,7 +11,7 @@ public static class PowerCatalog
     [
         new("super_speed", "Super Speed", "Move at 2.5 times normal speed.", PowerKind.Passive),
         new("vampirism", "Vampirism", "Heal for 100% of health damage dealt, capped at 100 HP.", PowerKind.Triggered),
-        new("invisibility", "Invisibility", "Automatically hide your body, weapons and equipment from other players.", PowerKind.Passive),
+        new("invisibility", "Invisibility", "Sound makes you visible. Fade out after staying quiet; shift and crouch walking stay silent.", PowerKind.Passive),
         new("teleport", "Teleport", "Activate to blink to the furthest safe floor toward your aim, up to the map trace limit.", PowerKind.Activated),
         new("explosive_bullets", "Explosive Bullets", "Bullet impacts cause powerful 55-damage blasts with line-of-sight falloff.", PowerKind.Triggered),
         new("infinite_ammo", "Infinite Ammo", "Your firearm magazine automatically refills.", PowerKind.Passive),

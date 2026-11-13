@@ -31,15 +31,23 @@ public sealed partial class Plugin
         RegisterEventHandler<EventPlayerTeam>((e,i)=> {
             Guard(()=> { if (!e.Disconnect && e.Userid is { } p) Mode.TeamChanged(p,e.Team); }); return HookResult.Continue;
         });
-        RegisterEventHandler<EventWeaponFire>((e,i)=> { Guard(()=> { if (Mode.IsBoss(e.Userid)) Powers.Fire(); }); return HookResult.Continue; });
-        RegisterEventHandler<EventPlayerJump>((e,i)=> { Guard(()=> { if (Mode.IsBoss(e.Userid)) Powers.Jump(); }); return HookResult.Continue; });
-        RegisterEventHandler<EventBulletImpact>((e,i)=> { Guard(()=> { if (Mode.IsBoss(e.Userid)) Powers.Impact(e.X,e.Y,e.Z); }); return HookResult.Continue; });
+        RegisterEventHandler<EventWeaponFire>((e,i)=> { Guard(()=> { if (e.Userid is { } p) Powers.Fire(p); }); return HookResult.Continue; });
+        RegisterEventHandler<EventPlayerJump>((e,i)=> { Guard(()=> { if (e.Userid is { } p) Powers.Jump(p); }); return HookResult.Continue; });
+        RegisterEventHandler<EventBulletImpact>((e,i)=> { Guard(()=> { if (e.Userid is { } p) Powers.Impact(e.X,e.Y,e.Z,p); }); return HookResult.Continue; });
+        RegisterEventHandler<EventWeaponReload>((e,i)=> { Guard(()=> { if (e.Userid is { } p) Powers.Noise(p); }); return HookResult.Continue; });
+        RegisterEventHandler<EventPlayerFootstep>((e,i)=> { Guard(()=>Powers.Footstep(e.Userid)); return HookResult.Continue; });
+        RegisterEventHandler<EventGrenadeThrown>((e,i)=> { Guard(()=> { if (e.Userid is { } p) Powers.Noise(p); }); return HookResult.Continue; });
+        RegisterEventHandler<EventItemPickup>((e,i)=> { Guard(()=> { if (!e.Silent && e.Userid is { } p) Powers.Noise(p); }); return HookResult.Continue; });
+        RegisterEventHandler<EventWeaponZoom>((e,i)=> { Guard(()=> { if (e.Userid is { } p) Powers.Noise(p); }); return HookResult.Continue; });
+        RegisterEventHandler<EventBombBeginplant>((e,i)=> { Guard(()=> { if (e.Userid is { } p) Powers.Noise(p); }); return HookResult.Continue; });
+        RegisterEventHandler<EventBombBegindefuse>((e,i)=> { Guard(()=> { if (e.Userid is { } p) Powers.Noise(p); }); return HookResult.Continue; });
         RegisterEventHandler<EventSmokegrenadeDetonate>((e,i)=> { Guard(()=>Powers.Smoke(e.X,e.Y,e.Z)); return HookResult.Continue; });
         RegisterEventHandler<EventPlayerHurt>((e,i)=> { Guard(()=>PlayerHurt(e)); return HookResult.Continue; });
         RegisterEventHandler<EventPlayerDeath>((e,i)=> {
             Guard(()=> {
                 if (!Mode.Live) return;
-                if (Mode.IsBoss(e.Userid)) { Broadcast("The superpowered player has been eliminated!"); Powers.Clear(); }
+                Powers.Stop(e.Userid);
+                if (Mode.IsBoss(e.Userid)) Broadcast("The superpowered player has been eliminated!");
                 else if (!Mode.Opponents.Any(p=>Players.AlivePawn(p) is not null)) Broadcast("All opponents have been eliminated!");
             });
             return HookResult.Continue;
@@ -50,8 +58,8 @@ public sealed partial class Plugin
         var victim=Players.Controller(p); if (!Players.Playing(victim)) return null;
         if (Damage.SourcePawn is { } source) info.Attacker.Raw=source;
         var attacker=Players.Controller(info.Attacker.Value);
-        var bossVictim=Mode.IsBoss(victim);
-        var bossAttacker=Mode.IsBoss(attacker) && attacker!.TeamNum!=victim!.TeamNum;
+        var bossVictim=Powers.HasPowers(victim);
+        var bossAttacker=Powers.HasPowers(attacker) && attacker!.TeamNum!=victim!.TeamNum;
         return bossVictim || bossAttacker ? new(victim!,attacker,info,bossVictim,bossAttacker,Damage.Synthetic) : null;
     }
     private HookResult BeforeDamage(CCSPlayerPawn p,CTakeDamageInfo info)
@@ -70,7 +78,7 @@ public sealed partial class Plugin
         // for primary hits, so the same hit is never also processed by the native post hook.
         if (!Mode.Live || Damage.Synthetic || hurt.DmgHealth<=0 || !Players.Playing(hurt.Userid)) return;
         var victim=hurt.Userid!; var attacker=hurt.Attacker;
-        var bossVictim=Mode.IsBoss(victim); var bossAttacker=Mode.IsBoss(attacker) && attacker!.TeamNum!=victim.TeamNum;
+        var bossVictim=Powers.HasPowers(victim); var bossAttacker=Powers.HasPowers(attacker) && attacker!.TeamNum!=victim.TeamNum;
         if (!bossVictim && !bossAttacker) return;
         var healthBefore=100;
         var type=FirearmNames.Contains(hurt.Weapon.Replace("weapon_","",StringComparison.OrdinalIgnoreCase)) ? DamageTypes_t.DMG_BULLET : DamageTypes_t.DMG_GENERIC;

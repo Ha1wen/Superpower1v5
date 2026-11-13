@@ -28,7 +28,7 @@
     "passed": true
   },
   {
-    "name": "Invisibility applies automatically, reports active, and restores color",
+    "name": "Invisibility starts visible, needs no activation, and restores color",
     "passed": true
   },
   {

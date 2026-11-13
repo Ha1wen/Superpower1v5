@@ -104,7 +104,7 @@ tests.Add(("Cooldowns and one-use flags survive replacements and mid-round rerol
 }));
 tests.Add(("Every administrator entry point requires CounterStrikeSharp permissions",()=> {
     var admin=typeof(Plugin).GetMethods().Where(m=>m.GetCustomAttributes<ConsoleCommandAttribute>().Any(a=>a.Command.StartsWith("css_sp_"))).ToList();
-    Check(admin.Count==9,"Missing admin commands");
+    Check(admin.Count==12,"Missing admin commands");
     foreach (var m in admin) Check(m.GetCustomAttributes<RequiresPermissions>().Any(),"Unprotected command: "+m.Name);
 }));
 tests.Add(("Default configuration round-trips all 18 power settings",()=> {
@@ -119,7 +119,7 @@ tests.Add(("Removed powers cannot be selected, assigned, or retained in migrated
     c.Powers["teleport"].Distance=450; c.Powers["teleport"].Cooldown=7; c.Powers["explosive_bullets"].Strength=18;
     c.Validate();
     Check(retired.All(id=>!c.Powers.ContainsKey(id) && !PowerCatalog.All.Any(p=>p.Id==id)),"Removed power survived");
-    Check(c.Version==6 && c.Powers["super_speed"].Strength==2.5f && c.Powers["vampirism"].Strength==1 && c.Powers["explosive_bullets"].Strength==55,"Balance migration failed");
+    Check(c.Version==7 && c.Powers["super_speed"].Strength==2.5f && c.Powers["vampirism"].Strength==1 && c.Powers["explosive_bullets"].Strength==55,"Balance migration failed");
     Check(c.Powers["teleport"].Distance==0 && c.Powers["teleport"].Cooldown==7,"Migration lost customized cooldown");
 }));
 tests.Add(("Unlimited teleport uses a finite world trace with no old 1200-unit clamp",()=> {
@@ -155,7 +155,7 @@ tests.Add(("Version 2 migration adds retained new powers and preserves customize
     var added=new[] { "bhop","sandevistan","pyromaniac","random_explosion","tiny" };
     foreach (var id in added) c.Powers.Remove(id);
     c.Powers["super_speed"].Strength=3; c.Powers["teleport"].Cooldown=8; c.Validate();
-    Check(c.Version==6 && c.Powers.Count==18 && added.All(c.Powers.ContainsKey),"Missing new powers");
+    Check(c.Version==7 && c.Powers.Count==18 && added.All(c.Powers.ContainsKey),"Missing new powers");
     Check(c.Powers["super_speed"].Strength==3 && c.Powers["teleport"].Cooldown==8,"Customized settings changed");
     Check(c.Powers["sandevistan"].Duration==10 && c.Powers["random_explosion"].Duration==0 && c.Powers["random_explosion"].Cooldown==20,"Requested durations changed");
 }));
@@ -181,7 +181,7 @@ tests.Add(("Version 3 JSON drops rarities and Yoru while preserving unrelated tu
      "invisibility":{"Duration":5,"Cooldown":25,"Strength":40},"wall_vision":{"Duration":6,"Cooldown":25}}}
     """;
     var c=JsonSerializer.Deserialize<PluginConfig>(old)!; c.Validate(); var json=JsonSerializer.Serialize(c);
-    Check(c.Version==6 && c.Powers.Count==18 && !json.Contains("RarityWeights") && !json.Contains("yoru_flash"),"Removed configuration survived");
+    Check(c.Version==7 && c.Powers.Count==18 && !json.Contains("RarityWeights") && !json.Contains("yoru_flash"),"Removed configuration survived");
     Check(c.Powers["super_speed"].Strength==3 && c.Powers["teleport"].Cooldown==8 && c.Powers["invisibility"].Strength==40,"Customized settings lost");
     Check(typeof(PowerDefinition).GetProperty("Rarity") is null,"Rarity remains in the catalog model");
 }));
@@ -190,7 +190,7 @@ tests.Add(("Version 4 migration makes explosions immediate with a 20-second cool
     c.Powers["random_explosion"].Duration=20; c.Powers["random_explosion"].Cooldown=45;
     c.Powers["random_explosion"].Strength=600; c.Powers["teleport"].Cooldown=8;
     c.Validate();
-    Check(c.Version==6 && c.Powers["random_explosion"].Duration==0 && c.Powers["random_explosion"].Cooldown==20,"Old fuse/cooldown survived");
+    Check(c.Version==7 && c.Powers["random_explosion"].Duration==0 && c.Powers["random_explosion"].Cooldown==20,"Old fuse/cooldown survived");
     Check(c.Powers["random_explosion"].Strength==600 && c.Powers["teleport"].Cooldown==8,"Other tuning changed");
     var loadout=new RoundLoadout([PowerCatalog.Get("random_explosion"),PowerCatalog.Get("infinite_ammo")]);
     loadout.StartCooldown("random_explosion",10,c.Powers["random_explosion"].Cooldown);
@@ -202,11 +202,11 @@ tests.Add(("Invisibility and Wall Vision are passive and require no activation",
         Check(PowerCatalog.Get(id).Kind==PowerKind.Passive,"Still activated: "+id);
     Check(PowerCatalog.Get("random_explosion").Kind==PowerKind.Activated,"Explosion activation changed");
 }));
-tests.Add(("Version 5 migration adds Juggernaut and Cluster Grenade, with permanent T ownership",()=> {
+tests.Add(("Version 5 migration adds Juggernaut and Cluster Grenade and preserves optional rotation",()=> {
     var c=Default(); c.Version=5; c.RotateSuperpoweredPlayer=true; c.SuperpoweredPlayerTeam="CT";
     c.Powers.Remove("juggernaut"); c.Powers.Remove("cluster_grenade"); c.Powers["second_chance"].Duration=.1f;
     c.Powers["teleport"].Cooldown=8; c.Validate();
-    Check(c.Version==6 && c.Powers.Count==18 && c.SuperpoweredPlayerTeam=="T" && !c.RotateSuperpoweredPlayer,"team/config migration");
+    Check(c.Version==7 && c.Powers.Count==18 && c.SuperpoweredPlayerTeam=="T" && c.RotateSuperpoweredPlayer,"team/config migration");
     Check(c.Powers["juggernaut"].Strength==500 && c.Powers["cluster_grenade"].Strength==4 && c.Powers["second_chance"].Duration==3,"new settings");
     Check(c.Powers["teleport"].Cooldown==8,"unrelated tuning changed");
 }));
@@ -223,6 +223,44 @@ tests.Add(("Rewind memory is bounded and never retains old-round history",()=> {
     for (var i=0;i<5000;i++) h.Record(new(i*.01,default,default,default,500,100));
     Check(h.Count<=128 && h.Candidates(50,3).All(f=>f.Time>=39.9),"unbounded history");
     h.Clear(); Check(h.Count==0,"round cleanup failed");
+}));
+tests.Add(("Random promotion chooses eligible humans, changes boss, and supports an empty T side",()=> {
+    Candidate[] players=[new("old",false,2),new("new",false,3),new("bot",true,3),new("spec",false,1)];
+    for (var seed=0;seed<30;seed++)
+    {
+        var roster=RosterPlanner.Plan(players,true,5,"old",true,new Random(seed))!;
+        Check(roster.Boss=="new" && roster.Opponents.Contains("old"),"Wrong promotion candidate");
+        Check(!roster.Opponents.Contains("spec"),"Selected spectator");
+    }
+    Candidate[] ctOnly=[new("a",true,3),new("b",true,3)];
+    Check(RosterPlanner.Plan(ctOnly,true,5) is null,"Manual mode promoted CT");
+    Check(RosterPlanner.Plan(ctOnly,true,5,randomize:true) is not null,"Random mode needs an existing T");
+    Check(RosterPlanner.Plan(players,true,5,"old")!.Boss=="old","Manual T ownership changed");
+}));
+tests.Add(("Invisibility reveals immediately, fades after silence, and restarts its quiet timer",()=> {
+    var fade=new SilenceFade(); fade.Noise(10);
+    Check(fade.Alpha(10,.5,1)==255 && fade.Alpha(10.5,.5,1)==255,"Noisy grace period");
+    Check(fade.Alpha(11,.5,1)==128 && fade.Alpha(11.5,.5,1)==0,"Fade timing");
+    fade.Noise(11.4); Check(fade.Alpha(11.5,.5,1)==255,"Sound did not reset fade");
+    for (var i=0;i<100;i++) { fade.Noise(20+i*.1); Check(fade.Alpha(20+i*.1,.5,1)==255,"Sustained sound concealed"); }
+    Check(fade.Alpha(100,.5,1)==0,"Never concealed after sustained noise");
+}));
+tests.Add(("Version 7 mode switches persist and invalid fade timing is repaired",()=> {
+    var c=Default(); Check(!c.RotateSuperpoweredPlayer && !c.PublicPowerAnnouncements && !c.EveryoneHasPowers,"Unsafe mode defaults");
+    c.RotateSuperpoweredPlayer=true; c.PublicPowerAnnouncements=true; c.EveryoneHasPowers=true;
+    c.InvisibilityQuietDelay=float.NaN; c.InvisibilityFadeDuration=0; c.Validate();
+    var copy=JsonSerializer.Deserialize<PluginConfig>(JsonSerializer.Serialize(c))!; copy.Validate();
+    Check(copy.RotateSuperpoweredPlayer && copy.PublicPowerAnnouncements && copy.EveryoneHasPowers,"Switches lost on validation/roundtrip");
+    Check(copy.InvisibilityQuietDelay==.5f && copy.InvisibilityFadeDuration==1,"Invalid fade timing retained");
+}));
+tests.Add(("Lethal bullet prediction includes head/stomach/leg scaling, helmet armor and low armor",()=> {
+    Check(BulletHealthDamage.Estimate(35,HitGroup_t.HITGROUP_HEAD,4,1,0,false,1.55f)==140,"unarmored headshot missed");
+    Check(BulletHealthDamage.Estimate(35,HitGroup_t.HITGROUP_STOMACH,4,1,0,false,2)==43.75f,"stomach scaling");
+    Check(BulletHealthDamage.Estimate(35,HitGroup_t.HITGROUP_LEFTLEG,4,1,100,true,1)==26.25f,"leg armor applied");
+    Check(BulletHealthDamage.Estimate(33,HitGroup_t.HITGROUP_HEAD,4,1,100,true,1.4f)<100,"nonlethal helmet hit predicted lethal");
+    Check(BulletHealthDamage.Estimate(35,HitGroup_t.HITGROUP_HEAD,4,1,100,true,1.55f)>100,"lethal helmet hit missed");
+    Check(BulletHealthDamage.Estimate(100,HitGroup_t.HITGROUP_CHEST,4,1,10,false,1)==80,"low armor depletion");
+    Check(BulletHealthDamage.Estimate(35,HitGroup_t.HITGROUP_HEAD,4,.5f,0,false,2)==70,"team scaling");
 }));
 var failed=0;
 foreach (var (name,action) in tests)

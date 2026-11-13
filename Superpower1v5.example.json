@@ -1,5 +1,5 @@
 {
-  "ConfigVersion": 6,
+  "ConfigVersion": 7,
   "Enabled": true,
   "GameMode": "1v5",
   "NormalHealth": 100,
@@ -7,6 +7,10 @@
   "PowersPerRound": 2,
   "MaxOpponents": 5,
   "RotateSuperpoweredPlayer": false,
+  "PublicPowerAnnouncements": false,
+  "EveryoneHasPowers": false,
+  "InvisibilityQuietDelay": 0.5,
+  "InvisibilityFadeDuration": 1,
   "SuperpoweredPlayerTeam": "T",
   "AllowBots": true,
   "AllowDuplicatePowers": false,

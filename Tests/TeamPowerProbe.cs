@@ -24,6 +24,7 @@ public sealed partial class Plugin
     {
         foreach (var entry in Config.Powers) entry.Value.Enabled=entry.Key is "teleport" or "infinite_ammo";
         StopProbeBots(true);
+        Config.InvisibilityQuietDelay=0; Config.InvisibilityFadeDuration=.1f;
         RegisterEventHandler<EventHegrenadeDetonate>((e,i)=> { CountUtility("he"); return HookResult.Continue; });
         RegisterEventHandler<EventFlashbangDetonate>((e,i)=> { CountUtility("flash"); return HookResult.Continue; });
         RegisterEventHandler<EventSmokegrenadeDetonate>((e,i)=> { CountUtility("smoke"); return HookResult.Continue; });
@@ -45,6 +46,7 @@ public sealed partial class Plugin
             foreach (var definition in Models.PowerCatalog.All)
             { Powers.NativeProbePair(definition.Id,definition.Id=="infinite_ammo" ? "teleport" : "infinite_ammo"); Powers.Tick(); Powers.SlowTick(); }
             Powers.NativeProbePair("invisibility","infinite_ammo");
+            AddTimer(.35f,()=>Probe("Quiet invisibility conceals body and refreshed equipment for opponents only",()=> {
             var boss=Mode.Boss!; var pawn=Players.AlivePawn(boss)!; var opponent=Mode.Opponents.First();
             Require(Effects.HiddenFrom(opponent.EntityHandle.Raw,pawn.Index) && !Effects.HiddenFrom(boss.EntityHandle.Raw,pawn.Index),"body recipient filtering");
             Require(Effects.HiddenEntityCount>=2,"owned weapon missing from concealment");
@@ -53,6 +55,7 @@ public sealed partial class Plugin
             Powers.SlowTick(); Require(Effects.HiddenFrom(opponent.EntityHandle.Raw,attachment.Index),"equipment visible");
             attachment.OwnerEntity.Raw=uint.MaxValue; Powers.SlowTick(); Require(!Effects.HiddenFrom(opponent.EntityHandle.Raw,attachment.Index),"detached item remains hidden"); attachment.Remove();
             Powers.NativeProbePair("teleport","infinite_ammo"); Require(Effects.HiddenEntityCount==0,"concealment leaked");
+            }),TimerFlags.STOP_ON_MAPCHANGE);
         }),TimerFlags.STOP_ON_MAPCHANGE);
         AddTimer(13,()=>Probe("Juggernaut has 500 HP, takes damage, heals normally and restores 100 HP on removal",()=> {
             Powers.NativeProbePair("juggernaut","infinite_ammo"); var boss=Mode.Boss!; var pawn=Players.AlivePawn(boss)!;

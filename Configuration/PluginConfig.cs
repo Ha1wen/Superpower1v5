@@ -82,7 +82,7 @@ public sealed class PowerSettings
 public sealed class PluginConfig : BasePluginConfig
 {
     [JsonPropertyName("ConfigVersion")]
-    public override int Version { get; set; } = 6;
+    public override int Version { get; set; } = 7;
     public bool Enabled { get; set; } = true;
     public string GameMode { get; set; } = "1v5";
     public int NormalHealth { get; set; } = 100;
@@ -90,6 +90,10 @@ public sealed class PluginConfig : BasePluginConfig
     public int PowersPerRound { get; set; } = 2;
     public int MaxOpponents { get; set; } = 5;
     public bool RotateSuperpoweredPlayer { get; set; }
+    public bool PublicPowerAnnouncements { get; set; }
+    public bool EveryoneHasPowers { get; set; }
+    public float InvisibilityQuietDelay { get; set; } = .5f;
+    public float InvisibilityFadeDuration { get; set; } = 1f;
     public string SuperpoweredPlayerTeam { get; set; } = "T";
     public bool AllowBots { get; set; } = true;
     public bool AllowDuplicatePowers { get; set; }
@@ -111,7 +115,8 @@ public sealed class PluginConfig : BasePluginConfig
         GameMode = "1v5";
         MaxOpponents = Math.Clamp(MaxOpponents, 1, 5);
         SuperpoweredPlayerTeam = "T";
-        RotateSuperpoweredPlayer = false;
+        if (!float.IsFinite(InvisibilityQuietDelay) || InvisibilityQuietDelay is <0 or >10) InvisibilityQuietDelay=.5f;
+        if (!float.IsFinite(InvisibilityFadeDuration) || InvisibilityFadeDuration is <.1f or >10) InvisibilityFadeDuration=1;
         PowerBlacklist = (PowerBlacklist ?? []).Where(s => !string.IsNullOrWhiteSpace(s))
             .Select(s => s.Trim().ToLowerInvariant()).Distinct().ToList();
         Powers ??= new();
@@ -137,6 +142,7 @@ public sealed class PluginConfig : BasePluginConfig
             Version=5;
         }
         if (Version < 6) { Powers["second_chance"].Duration=3; Version=6; }
+        if (Version < 7) Version=7;
     }
 
     public bool IsAvailable(PowerDefinition power) => Powers[power.Id].Enabled && !PowerBlacklist.Contains(power.Id);

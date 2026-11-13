@@ -23,11 +23,13 @@ public sealed partial class Plugin
         RegisterListener<Listeners.OnPlayerTakeDamagePre>((pawn,info)=> {
             if (watching && Mode.IsBoss(Players.Controller(pawn)))
             {
-                Logger.LogInformation("GUN DAMAGE type={Type}, health={HP}, consumed={Consumed}",info.BitsDamageType,pawn.Health,Powers.Loadout?.Consumed.Contains("second_chance"));
+                Logger.LogInformation("GUN DAMAGE type={Type}, health={HP}, consumed={Consumed}, traceGroup={Trace}, original={Original}, damage={Damage}",info.BitsDamageType,pawn.Health,Powers.Loadout?.Consumed.Contains("second_chance"),info.GetHitGroup(),info.OriginalDamage,info.Damage);
                 if ((info.BitsDamageType&DamageTypes_t.DMG_BULLET)!=0 && Powers.Loadout?.Consumed.Contains("second_chance")==true) consumedByBullet=true;
             }
             return HookResult.Continue;
         });
+        RegisterEventHandler<EventPlayerHurt>((e,i)=> { if (watching) Logger.LogInformation("GUN HURT victim={Victim}, damage={Damage}, health={Health}, group={Group}",e.Userid?.PlayerName,e.DmgHealth,e.Health,e.Hitgroup); return HookResult.Continue; });
+        RegisterEventHandler<EventPlayerDeath>((e,i)=> { if (watching) Logger.LogInformation("GUN DEATH victim={Victim}, weapon={Weapon}, head={Head}",e.Userid?.PlayerName,e.Weapon,e.Headshot); return HookResult.Continue; });
         RegisterListener<Listeners.OnTick>(()=> {
             if (consumedByBullet && watching) { watching=false; StopProbeBots(true); }
             if (!watching || riflePawn is not { IsValid:true } enemy || Players.AlivePawn(Mode.Boss) is not { } target || target.AbsOrigin is not { } point) return;

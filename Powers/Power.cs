@@ -12,14 +12,16 @@ public sealed record DamageEvent(CCSPlayerController Victim, CCSPlayerController
     public bool Bullet => ((DamageType ?? Info?.BitsDamageType ?? DamageTypes_t.DMG_GENERIC) & (DamageTypes_t.DMG_BULLET | DamageTypes_t.DMG_BUCKSHOT)) != 0;
 }
 public sealed record DamageDealt(DamageEvent Hit, int HealthLost);
-public sealed class PowerContext(Plugin plugin)
+public sealed class PowerContext(Plugin plugin,uint? ownerRaw=null)
 {
     public Plugin Plugin { get; } = plugin;
-    public CCSPlayerController? Boss => Plugin.Mode.Boss;
+    public CCSPlayerController? Boss => ownerRaw is { } raw ? Players.Resolve(raw) : Plugin.Mode.Boss;
     public CCSPlayerPawn? Pawn => Players.AlivePawn(Boss);
     public double Now => Server.CurrentTime;
-    public RoundLoadout Loadout => Plugin.Powers.Loadout!;
-    public IEnumerable<CCSPlayerController> Opponents => Plugin.Mode.Opponents;
+    public RoundLoadout Loadout => Plugin.Powers.GetLoadout(Boss)!;
+    public Managers.EffectsManager Effects => Plugin.Powers.GetEffects(Boss);
+    public bool Contains(Power power) => Plugin.Powers.GetActive(Boss).Contains(power);
+    public IEnumerable<CCSPlayerController> Opponents => Plugin.Mode.Eligible().Where(p=>p.TeamNum!=Boss?.TeamNum);
     public PowerSettings Settings(string id) => Plugin.Config.Powers[id];
     public void Tell(string text) { if (Players.Connected(Boss)) Boss!.PrintToChat(Plugin.Prefix + text); }
 }
@@ -28,6 +30,7 @@ public abstract class Power(string id)
     public string Id { get; } = id;
     public PowerDefinition Definition => PowerCatalog.Get(Id);
     public virtual bool IsActive => false;
+    public virtual string? Status => null;
     protected PowerSettings Settings(PowerContext c) => c.Settings(Id);
     public virtual void Apply(PowerContext c) { }
     public virtual void Tick(PowerContext c) { }
@@ -38,9 +41,10 @@ public abstract class Power(string id)
     public virtual void Projectile(PowerContext c,CBaseCSGrenadeProjectile projectile) { }
     public virtual void WeaponFire(PowerContext c) { }
     public virtual void Jump(PowerContext c) { }
+    public virtual void Noise(PowerContext c) { }
     public virtual void ModifyDamage(PowerContext c, DamageEvent hit) { }
     public virtual void AfterDamage(PowerContext c, DamageDealt hit) { }
     public virtual bool PreventLethal(PowerContext c, DamageEvent hit) => false;
     public virtual bool Activate(PowerContext c) => false;
-    public virtual void Cleanup(PowerContext c) => c.Plugin.Effects.RemoveSource(Id);
+    public virtual void Cleanup(PowerContext c) => c.Effects.RemoveSource(Id);
 }

@@ -13,14 +13,14 @@ namespace Superpower1v5;
 public sealed partial class Plugin : BasePlugin,IPluginConfig<PluginConfig>
 {
     public override string ModuleName => "Superpower 1v5";
-    public override string ModuleVersion => "1.6.0";
+    public override string ModuleVersion => "1.7.0";
     public override string ModuleAuthor => "Superpower1v5";
     public override string ModuleDescription => "The chosen T player has two private powers against up to five CT opponents.";
     public const string Prefix = " \x04[SUPERPOWER]\x01 ";
     public PluginConfig Config { get; set; } = new();
     public ModeController Mode { get; private set; } = null!;
     public PowerManager Powers { get; private set; } = null!;
-    public EffectsManager Effects { get; private set; } = null!;
+    public EffectsManager Effects => Powers.GetEffects(Mode.Boss);
     public DamageService Damage { get; private set; } = null!;
     public FeedbackManager Feedback { get; private set; } = null!;
     private bool _unloaded;
@@ -30,13 +30,16 @@ public sealed partial class Plugin : BasePlugin,IPluginConfig<PluginConfig>
     public void OnConfigParsed(PluginConfig config) { config.Validate(); Config=config; }
     public override void Load(bool hotReload)
     {
-        Config.Validate(); Effects=new(); Powers=new(this); Mode=new(this); Damage=new(this); Feedback=new(this);
+        Config.Validate(); Powers=new(this); Mode=new(this); Damage=new(this); Feedback=new(this);
         RegisterEvents();
         RegisterListener<Listeners.OnTick>(()=>Guard(Tick));
         RegisterListener<Listeners.OnServerPostEntityThink>(()=>Guard(Powers.PostThink));
         RegisterListener<Listeners.OnMapStart>(_=>Guard(()=> { Mode.MapEnd(); Mode.EnforceCvars(); }));
         RegisterListener<Listeners.OnMapEnd>(()=>Guard(()=> { Mode.MapEnd(); ClearEntities(); }));
-        RegisterListener<Listeners.OnClientDisconnect>(slot=>Guard(()=> { if (Mode.Boss?.Slot==slot) Mode.BossLeft(); }));
+        RegisterListener<Listeners.OnClientDisconnect>(slot=>Guard(()=> {
+            var player=Utilities.GetPlayerFromSlot(slot); Powers.Stop(player);
+            if (Mode.Boss?.Slot==slot) Mode.BossLeft();
+        }));
         RegisterListener<Listeners.OnEntityTakeDamagePre>((entity,info)=> {
             try
             {
@@ -61,7 +64,7 @@ public sealed partial class Plugin : BasePlugin,IPluginConfig<PluginConfig>
             Defer(()=> { if (Players.Entity<CBaseCSGrenadeProjectile>(raw) is { IsValid:true } projectile) Powers.Projectile(projectile); });
         });
         RegisterListener<Listeners.OnPlayerTakeDamagePost>((p,info,result)=>Guard(()=>AfterDamage(p,info,result)));
-        RegisterListener<Listeners.CheckTransmit>(info=>Effects.FilterTransmission(info));
+        RegisterListener<Listeners.CheckTransmit>(info=>Powers.FilterTransmission(info));
         Server.NextWorldUpdate(()=>Guard(()=> { Mode.EnforceCvars(); if (hotReload) Mode.QueueRestart(); }));
         Logger.LogInformation("Superpower1v5 {Version} loaded. API 380; {PowerCount} powers; hot reload={HotReload}",ModuleVersion,Models.PowerCatalog.All.Count,hotReload);
 #if SERVER_SMOKE
@@ -75,7 +78,13 @@ public sealed partial class Plugin : BasePlugin,IPluginConfig<PluginConfig>
         if (Server.CurrentTime>=_slowAt) { _slowAt=Server.CurrentTime+.1; Powers.SlowTick(); Feedback.Hud(); }
         if (Server.CurrentTime>=_maintenanceAt) { _maintenanceAt=Server.CurrentTime+1; Mode.Maintenance(); }
     }
-    public void Broadcast(string text) => Server.PrintToChatAll(Prefix+text);
+    public void Broadcast(string text)
+    {
+#if SERVER_SMOKE
+        _probeBroadcasts.Add(text);
+#endif
+        Server.PrintToChatAll(Prefix+text);
+    }
     public void Defer(Action action)
     {
         var generation=Mode.Generation;

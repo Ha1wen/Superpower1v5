@@ -12,6 +12,7 @@ public sealed class ModeController(Plugin plugin)
 {
     private readonly Dictionary<string,(ConVarBase cvar,string original)> _cvars=new();
     private uint? _bossRaw;
+    private uint? _requestedBoss;
     private bool _prepared,_changing,_restartQueued,_waitingForPlayers=true;
     private double _lastRestart=-100;
     public bool Live { get; private set; }
@@ -21,11 +22,12 @@ public sealed class ModeController(Plugin plugin)
     public CsTeam OpponentTeam => CsTeam.CounterTerrorist;
     public CCSGameRules? Rules => Utilities.FindAllEntitiesByDesignerName<CCSGameRulesProxy>("cs_gamerules").FirstOrDefault()?.GameRules;
     public bool Warmup => Rules?.WarmupPeriod ?? true;
-    public bool CanUsePowers => plugin.Config.Enabled && Live && (!Warmup || plugin.Config.EnableDuringWarmup) && Rules?.FreezePeriod==false && Players.AlivePawn(Boss) is not null;
+    public bool CanUsePowers => CanUsePlayerPowers(Boss);
+    public bool CanUsePlayerPowers(CCSPlayerController? player) => plugin.Config.Enabled && Live && (!Warmup || plugin.Config.EnableDuringWarmup) && Rules?.FreezePeriod==false && Players.Playing(player) && plugin.Powers.HasPowers(player) && Players.AlivePawn(player) is not null;
     public IEnumerable<CCSPlayerController> Opponents => Eligible().Where(p=>p.Team==OpponentTeam && !IsBoss(p));
     public bool IsBoss(CCSPlayerController? p) => Players.Connected(p) && p!.EntityHandle.Raw==_bossRaw;
     public List<CCSPlayerController> Eligible() => Utilities.GetPlayers().Where(p=>Players.Playing(p) && (!p.IsBot || plugin.Config.AllowBots)).OrderBy(p=>p.IsBot).ThenBy(p=>p.Slot).ToList();
-    private bool Ready() => Eligible().Count>=2 && Eligible().Any(p=>p.Team==BossTeam);
+    private bool Ready() => Eligible().Count>=2 && (plugin.Config.RotateSuperpoweredPlayer || Eligible().Any(p=>p.Team==BossTeam));
     public bool CanJoinT(CCSPlayerController player)
     {
         var incumbent=Eligible().FirstOrDefault(p=>p.Team==BossTeam && p.EntityHandle.Raw!=player.EntityHandle.Raw);
@@ -51,12 +53,15 @@ public sealed class ModeController(Plugin plugin)
         if (!plugin.Config.Enabled || Warmup && !plugin.Config.EnableDuringWarmup) return;
         var players=Eligible();
         var previous=Boss is { } old ? Players.Key(old) : null;
-        var roster=RosterPlanner.Plan(players.Select(p=>new Candidate(Players.Key(p),p.IsBot,p.TeamNum)).ToArray(),plugin.Config.AllowBots,plugin.Config.MaxOpponents,previous);
+        var requested=_requestedBoss is { } requestedRaw ? players.FirstOrDefault(p=>p.EntityHandle.Raw==requestedRaw) : null;
+        var roster=RosterPlanner.Plan(players.Select(p=>new Candidate(Players.Key(p),p.IsBot,p.TeamNum)).ToArray(),plugin.Config.AllowBots,plugin.Config.MaxOpponents,previous,plugin.Config.RotateSuperpoweredPlayer && requested is null);
+        _requestedBoss=null;
         if (roster is null) { _bossRaw=null; return; }
         var boss=players.First(p=>Players.Key(p)==roster.Boss); _bossRaw=boss.EntityHandle.Raw;
         _changing=true;
         try
         {
+            Move(boss,BossTeam);
             foreach (var p in players.Where(p=>!IsBoss(p))) Move(p,roster.Opponents.Contains(Players.Key(p)) ? OpponentTeam : CsTeam.Spectator);
             if (!plugin.Config.AllowBots)
                 foreach (var p in Utilities.GetPlayers().Where(p=>Players.Playing(p)&&p.IsBot)) Move(p,CsTeam.Spectator);
@@ -72,7 +77,7 @@ public sealed class ModeController(Plugin plugin)
     private void ResetHealth(CCSPlayerController p)
     {
         if (Players.AlivePawn(p) is not { } pawn) return;
-        var health=IsBoss(p) && plugin.Powers.Loadout?.Has("juggernaut")==true ? 500 : 100;
+        var health=plugin.Powers.GetLoadout(p)?.Has("juggernaut")==true ? 500 : 100;
         pawn.MaxHealth=health; pawn.Health=health;
         Utilities.SetStateChanged(pawn,"CBaseEntity","m_iMaxHealth"); Utilities.SetStateChanged(pawn,"CBaseEntity","m_iHealth");
     }
@@ -85,32 +90,39 @@ public sealed class ModeController(Plugin plugin)
     public void Spawn(CCSPlayerController p)
     {
         if (!plugin.Config.Enabled || !Players.Playing(p)) return;
-        ResetHealth(p); if (IsBoss(p)) plugin.Powers.ApplyToPawn();
+        if (Live && plugin.Config.EveryoneHasPowers && !plugin.Powers.HasPowers(p)) { plugin.Powers.Roll(true,p); plugin.Feedback.Loadout(p); }
+        ResetHealth(p); plugin.Powers.ApplyToPawn(p);
     }
     public void EndRound(int winner)
     {
-        if (Live) plugin.Broadcast(winner==(int)BossTeam ? "THE T BOSS WINS THE ROUND!" : winner==(int)OpponentTeam ? "THE CT PLAYERS WIN THE ROUND!" : "Round ended in a draw.");
+        if (Live)
+        {
+            plugin.Broadcast(winner==(int)BossTeam ? "THE T BOSS WINS THE ROUND!" : winner==(int)OpponentTeam ? "THE CT PLAYERS WIN THE ROUND!" : "Round ended in a draw.");
+            plugin.Feedback.RevealRound();
+        }
         ResetRound();
     }
     public void ResetRound() { Live=false; _prepared=false; Generation++; plugin.ClearDamageTracking(); plugin.Powers.Clear(); }
-    public void MapEnd() { ResetRound(); _bossRaw=null; _restartQueued=false; _waitingForPlayers=true; }
+    public void MapEnd() { ResetRound(); _bossRaw=null; _requestedBoss=null; _restartQueued=false; _waitingForPlayers=true; }
     public void RequestBoss(CCSPlayerController p)
     {
         if (!Players.Playing(p) || p.IsBot && !plugin.Config.AllowBots) throw new InvalidOperationException("Select an eligible player.");
         _changing=true;
         try { foreach (var other in Eligible().Where(other=>other.Team==BossTeam && other.EntityHandle.Raw!=p.EntityHandle.Raw)) Move(other,OpponentTeam); Move(p,BossTeam); }
         finally { _changing=false; }
-        ResetRound(); _bossRaw=p.EntityHandle.Raw; _waitingForPlayers=true; QueueRestart();
+        ResetRound(); _bossRaw=p.EntityHandle.Raw; _requestedBoss=_bossRaw; _waitingForPlayers=true; QueueRestart();
     }
     public void BossLeft()
     {
+        if (Live) plugin.Feedback.RevealRound();
         ResetRound(); _bossRaw=null; _waitingForPlayers=true;
-        plugin.Broadcast("The T boss left their team. Join T to become the boss.");
+        plugin.Broadcast(plugin.Config.RotateSuperpoweredPlayer ? "The boss left. A new boss will be selected next round." : "The T boss left their team. Join T to become the boss.");
         if (Ready()) QueueRestart();
     }
     public void TeamChanged(CCSPlayerController p,int team)
     {
         if (_changing || !plugin.Config.Enabled || !Players.Connected(p)) return;
+        if (team is not (2 or 3)) plugin.Powers.Stop(p);
         if (IsBoss(p) && team!=(int)BossTeam) BossLeft();
         if (team==2)
         {
@@ -132,6 +144,7 @@ public sealed class ModeController(Plugin plugin)
     {
         if (!plugin.Config.Enabled) return;
         if (Live && (!Players.Playing(Boss) || Boss!.Team!=BossTeam)) BossLeft();
+        if (Live) plugin.Powers.ReconcileEveryone();
         if (_waitingForPlayers && !Live && !_prepared && !Warmup && Ready()) QueueRestart();
     }
     public void QueueRestart()

@@ -6,17 +6,45 @@ using Superpower1v5.Powers.Active;
 using Superpower1v5.Powers.Combat;
 using Superpower1v5.Powers.Movement;
 using Superpower1v5.Powers.Passive;
+using Superpower1v5.Support;
 
 namespace Superpower1v5.Managers;
 
+public sealed record PowerReveal(string PlayerName,IReadOnlyList<PowerDefinition> Powers);
 public sealed class PowerManager(Plugin plugin)
 {
-    private readonly SelectionEngine _selection = new(Random.Shared);
-    private readonly PowerContext _context = new(plugin);
-    private List<Power> _active = [];
-    private uint? _appliedPawn;
-    public RoundLoadout? Loadout { get; private set; }
-    public IReadOnlyList<Power> Active => _active;
+    private sealed class Owner(Plugin plugin,CCSPlayerController player)
+    {
+        public uint Raw { get; }=player.EntityHandle.Raw;
+        public string Name { get; }=player.PlayerName;
+        public PowerContext Context { get; }=new(plugin,player.EntityHandle.Raw);
+        public EffectsManager Effects { get; }=new();
+        public RoundLoadout? Loadout;
+        public List<Power> Active=[];
+        public uint? AppliedPawn;
+        public bool Enabled=true;
+    }
+    private readonly SelectionEngine _selection=new(Random.Shared);
+    private readonly Dictionary<uint,Owner> _owners=new();
+    private readonly EffectsManager _emptyEffects=new();
+    private EffectsManager[] _transmission=[];
+    private Owner? Find(CCSPlayerController? player) => player is { IsValid:true } && _owners.TryGetValue(player.EntityHandle.Raw,out var owner) ? owner : null;
+    private Owner Get(CCSPlayerController player)
+    {
+        if (_owners.TryGetValue(player.EntityHandle.Raw,out var owner)) return owner;
+        _owners[player.EntityHandle.Raw]=owner=new(plugin,player);
+        Volatile.Write(ref _transmission,_owners.Values.Select(o=>o.Effects).ToArray());
+        return owner;
+    }
+    public RoundLoadout? Loadout => GetLoadout(plugin.Mode.Boss);
+    public IReadOnlyList<Power> Active => GetActive(plugin.Mode.Boss);
+    public RoundLoadout? GetLoadout(CCSPlayerController? player) => Find(player) is { Enabled:true } owner ? owner.Loadout : null;
+    public IReadOnlyList<Power> GetActive(CCSPlayerController? player) => Find(player)?.Active ?? (IReadOnlyList<Power>)Array.Empty<Power>();
+    public EffectsManager GetEffects(CCSPlayerController? player) => Find(player)?.Effects ?? _emptyEffects;
+    public bool HasPowers(CCSPlayerController? player) => GetLoadout(player) is not null;
+    public IEnumerable<CCSPlayerController> PoweredPlayers => _owners.Values.Where(o=>o.Enabled).Select(o=>Players.Resolve(o.Raw)).OfType<CCSPlayerController>().Where(Players.Playing);
+    // Retain final pairs after deaths and toggles until the round-end reveal.
+    public IReadOnlyList<PowerReveal> Reveals => _owners.Values.Where(o=>o.Loadout is not null).Select(o=>new PowerReveal(o.Name,o.Loadout!.Powers.ToArray())).ToArray();
     public static Power Create(string id) => id switch
     {
         "super_speed" => new SuperSpeed(), "vampirism" => new Vampirism(), "invisibility" => new Invisibility(),
@@ -28,108 +56,146 @@ public sealed class PowerManager(Plugin plugin)
         "juggernaut" => new Juggernaut(), "cluster_grenade" => new ClusterGrenade(),
         _ => throw new ArgumentException($"Unknown power: {id}")
     };
-    public void Roll(bool newRound)
+    public void Roll(bool newRound,CCSPlayerController? player=null)
     {
-        var pair = _selection.SelectPair(plugin.Config);
-        CleanupInstances();
-        if (newRound || Loadout is null) Loadout = new(pair); else Loadout.SetPair(pair);
-        _active = pair.Select(p => Create(p.Id)).ToList();
-        ApplyToPawn();
+        player ??=plugin.Mode.Boss;
+        if (player is null) throw new InvalidOperationException("No power recipient.");
+        var owner=Get(player); var pair=_selection.SelectPair(plugin.Config);
+        Cleanup(owner); owner.Enabled=true;
+        if (newRound || owner.Loadout is null) owner.Loadout=new(pair); else owner.Loadout.SetPair(pair);
+        owner.Active=pair.Select(p=>Create(p.Id)).ToList(); Apply(owner);
+        if (newRound && plugin.Mode.IsBoss(player) && plugin.Config.EveryoneHasPowers)
+            foreach (var other in plugin.Mode.Eligible().Where(p=>!plugin.Mode.IsBoss(p))) Roll(true,other);
     }
 #if SERVER_SMOKE
-    public void NativeProbePair(string a,string b,Random? randomKillRandom=null)
+    public void NativeProbePair(string a,string b,Random? randomKillRandom=null,CCSPlayerController? player=null)
     {
-        CleanupInstances();
-        Loadout=new([PowerCatalog.Get(a),PowerCatalog.Get(b)]);
-        _active=Loadout.Powers.Select(p=>p.Id=="random_explosion" ? new RandomKill(randomKillRandom) : Create(p.Id)).ToList();
-        ApplyToPawn();
+        player ??=plugin.Mode.Boss;
+        var owner=Get(player!); Cleanup(owner); owner.Enabled=true;
+        owner.Loadout=new([PowerCatalog.Get(a),PowerCatalog.Get(b)]);
+        owner.Active=owner.Loadout.Powers.Select(p=>p.Id=="random_explosion" ? new RandomKill(randomKillRandom) : Create(p.Id)).ToList(); Apply(owner);
     }
 #endif
-    public void ApplyToPawn()
+    public void ReconcileEveryone()
     {
-        if (!plugin.Mode.Live || _context.Pawn is not { } pawn || pawn.EntityHandle.Raw == _appliedPawn) return;
-        _appliedPawn = pawn.EntityHandle.Raw;
-        foreach (var power in _active) power.Apply(_context);
+        if (!plugin.Mode.Live) return;
+        foreach (var owner in _owners.Values.ToArray())
+            if (owner.Enabled && !plugin.Mode.IsBoss(Players.Resolve(owner.Raw)) && !plugin.Config.EveryoneHasPowers) { Cleanup(owner); owner.Enabled=false; }
+        if (plugin.Config.EveryoneHasPowers)
+            foreach (var player in plugin.Mode.Eligible().Where(p=>!HasPowers(p))) { Roll(true,player); plugin.Feedback.Loadout(player); }
     }
-    public void Tick()
+    private void Apply(Owner owner)
     {
-        if (!plugin.Mode.CanUsePowers) return;
-        ApplyToPawn();
-        foreach (var power in _active.ToArray()) power.Tick(_context);
+        if (!plugin.Mode.Live || !owner.Enabled || !Players.Playing(owner.Context.Boss) || owner.Context.Pawn is not { } pawn || pawn.EntityHandle.Raw==owner.AppliedPawn) return;
+        if (owner.Active.Count==0 && owner.Loadout is { } loadout) owner.Active=loadout.Powers.Select(p=>Create(p.Id)).ToList();
+        owner.AppliedPawn=pawn.EntityHandle.Raw;
+        foreach (var power in owner.Active.ToArray()) power.Apply(owner.Context);
     }
-    public void SlowTick()
+    public void ApplyToPawn(CCSPlayerController? player=null)
     {
-        if (!plugin.Mode.CanUsePowers) return;
-        foreach (var power in _active.ToArray()) power.SlowTick(_context);
+        if (player is not null) { if (Find(player) is { } owner) Apply(owner); }
+        else foreach (var owner in _owners.Values.ToArray()) Apply(owner);
     }
-    public void Fire() { if (plugin.Mode.CanUsePowers) foreach (var p in _active.ToArray()) p.WeaponFire(_context); }
-    public void Jump() { if (plugin.Mode.CanUsePowers) foreach (var p in _active.ToArray()) p.Jump(_context); }
-    public void Impact(float x,float y,float z)
-    { if (plugin.Mode.CanUsePowers) foreach (var p in _active.ToArray()) p.BulletImpact(_context,new(x,y,z)); }
-    public void PostThink()
-    { if (plugin.Mode.CanUsePowers) foreach (var p in _active.ToArray()) p.PostThink(_context); }
-    public void Smoke(float x,float y,float z)
-    { foreach (var p in _active.ToArray()) p.Smoke(_context,new(x,y,z)); }
+    private void Dispatch(Action<Power,PowerContext> action,CCSPlayerController? player=null,bool all=false)
+    {
+        var owners=all ? _owners.Values.ToArray() : Find(player ?? plugin.Mode.Boss) is { } owner ? new[] { owner } : [];
+        foreach (var state in owners)
+        {
+            if (!state.Enabled || !plugin.Mode.CanUsePlayerPowers(state.Context.Boss)) continue;
+            Apply(state);
+            foreach (var power in state.Active.ToArray()) action(power,state.Context);
+        }
+    }
+    public void Tick() => Dispatch((p,c)=>p.Tick(c),all:true);
+    public void SlowTick() => Dispatch((p,c)=>p.SlowTick(c),all:true);
+    public void Fire(CCSPlayerController? player=null) { Noise(player); Dispatch((p,c)=>p.WeaponFire(c),player); }
+    public void Jump(CCSPlayerController? player=null) { Noise(player); Dispatch((p,c)=>p.Jump(c),player); }
+    public void Noise(CCSPlayerController? player=null) => Dispatch((p,c)=>p.Noise(c),player);
+    public void Footstep(CCSPlayerController? player)
+    { if (Players.AlivePawn(player) is { } pawn && !Invisibility.QuietMovement(player!,pawn)) Noise(player); }
+    public void Impact(float x,float y,float z,CCSPlayerController? player=null) => Dispatch((p,c)=>p.BulletImpact(c,new(x,y,z)),player);
+    public void PostThink() => Dispatch((p,c)=>p.PostThink(c),all:true);
+    public void Smoke(float x,float y,float z) => Dispatch((p,c)=>p.Smoke(c,new(x,y,z)),all:true);
     public void Projectile(CBaseCSGrenadeProjectile entity)
-    { if (plugin.Mode.CanUsePowers) foreach (var power in _active.ToArray()) power.Projectile(_context,entity); }
+    {
+        var thrower=Players.Controller(entity.Thrower.Value);
+        if (thrower is not null) Dispatch((p,c)=>p.Projectile(c,entity),thrower);
+    }
+    private static DamageEvent ForOwner(DamageEvent hit,Owner owner) => hit with {
+        BossVictim=hit.Victim.EntityHandle.Raw==owner.Raw,
+        BossAttacker=hit.Attacker?.EntityHandle.Raw==owner.Raw && hit.Attacker.TeamNum!=hit.Victim.TeamNum
+    };
     public bool BeforeDamage(DamageEvent hit)
     {
-        foreach (var p in _active.ToArray()) p.ModifyDamage(_context,hit);
-        // Test lethal protection after all modifiers, regardless of the random slot order.
-        return _active.Any(p => p.PreventLethal(_context,hit));
+        var relevant=_owners.Values.Where(o=>o.Enabled && (o.Raw==hit.Victim.EntityHandle.Raw || o.Raw==hit.Attacker?.EntityHandle.Raw)).ToArray();
+        foreach (var owner in relevant) foreach (var p in owner.Active.ToArray()) p.ModifyDamage(owner.Context,ForOwner(hit,owner));
+        foreach (var owner in relevant) foreach (var p in owner.Active.ToArray()) if (p.PreventLethal(owner.Context,ForOwner(hit,owner))) return true;
+        return false;
     }
     public void AfterDamage(DamageDealt hit)
-    { foreach (var p in _active.ToArray()) p.AfterDamage(_context,hit); }
-    public void Activate(int slot)
     {
-        if (!plugin.Mode.CanUsePowers || Loadout is not { } loadout || slot is < 0 or > 1) { _context.Tell("Abilities require a living boss in an active round."); return; }
-        var p = _active[slot];
-        if (p.Definition.Kind != PowerKind.Activated) { _context.Tell(p.Definition.Name+" works automatically."); return; }
-        if (p.IsActive) { _context.Tell(p.Definition.Name+" is already active for the rest of this round."); return; }
-        var remaining=loadout.Remaining(p.Id,_context.Now);
-        if (remaining > 0) { _context.Tell($"{p.Definition.Name}: {remaining:0.0}s remaining."); return; }
-        if (!p.Activate(_context)) return;
-        // Immediate native damage can end the round and clear the manager's loadout.
-        loadout.StartCooldown(p.Id,_context.Now,plugin.Config.Powers[p.Id].Cooldown);
-        _context.Tell(p.Definition.Name+" activated!"); plugin.Feedback.Ability();
+        Noise(hit.Hit.Victim);
+        foreach (var owner in _owners.Values.Where(o=>o.Enabled && (o.Raw==hit.Hit.Victim.EntityHandle.Raw || o.Raw==hit.Hit.Attacker?.EntityHandle.Raw)).ToArray())
+            foreach (var p in owner.Active.ToArray()) p.AfterDamage(owner.Context,new(ForOwner(hit.Hit,owner),hit.HealthLost));
     }
-    public void Give(string id,int? requestedSlot=null)
+    public void Activate(int slot,CCSPlayerController? player=null)
     {
-        if (Loadout is null) throw new InvalidOperationException("No active loadout.");
+        player ??=plugin.Mode.Boss;
+        if (Find(player) is not { Enabled:true,Loadout:{ } loadout } owner) return;
+        var c=owner.Context;
+        if (!plugin.Mode.CanUsePlayerPowers(player) || slot is <0 or >1) { c.Tell("Abilities require a living player in an active round."); return; }
+        var p=owner.Active[slot];
+        if (p.Definition.Kind!=PowerKind.Activated) { c.Tell(p.Definition.Name+" works automatically."); return; }
+        if (p.IsActive) { c.Tell(p.Definition.Name+" is already active."); return; }
+        var remaining=loadout.Remaining(p.Id,c.Now);
+        if (remaining>0) { c.Tell($"{p.Definition.Name}: {remaining:0.0}s remaining."); return; }
+        if (!p.Activate(c)) return;
+        loadout.StartCooldown(p.Id,c.Now,plugin.Config.Powers[p.Id].Cooldown);
+        c.Tell(p.Definition.Name+" activated!"); plugin.Feedback.Ability(player);
+    }
+    public void Give(string id,int? requestedSlot=null,CCSPlayerController? player=null)
+    {
+        player ??=plugin.Mode.Boss;
+        if (Find(player) is not { Enabled:true,Loadout:{ } loadout } owner) throw new InvalidOperationException("That player has no powers. Enable css_sp_everyone first for CT players.");
         var definition=PowerCatalog.Get(id);
         if (!plugin.Config.IsAvailable(definition)) throw new InvalidOperationException("Power is disabled or blacklisted.");
-        if (requestedSlot is < 0 or > 1) throw new ArgumentException("Slot must be 1 or 2.");
-        if (Loadout.Has(id))
+        if (requestedSlot is <0 or >1) throw new ArgumentException("Slot must be 1 or 2.");
+        if (loadout.Has(id))
         {
-            if (requestedSlot is { } target && Loadout.Powers[target].Id!=id)
-            {
-                Loadout.SetPair(Loadout.Powers.Reverse());
-                (_active[0],_active[1])=(_active[1],_active[0]);
-                _context.Tell($"{definition.Name} moved to slot {target+1}.");
-            }
+            if (requestedSlot is { } target && loadout.Powers[target].Id!=id)
+            { loadout.SetPair(loadout.Powers.Reverse()); (owner.Active[0],owner.Active[1])=(owner.Active[1],owner.Active[0]); owner.Context.Tell($"{definition.Name} moved to slot {target+1}."); }
             return;
         }
-        var slot=requestedSlot ?? (PowerCatalog.Compatible(Loadout.Powers[0],definition) ? 1 : 0);
-        Replace(slot,definition);
+        var slot=requestedSlot ?? (PowerCatalog.Compatible(loadout.Powers[0],definition) ? 1 : 0);
+        if (!PowerCatalog.Compatible(loadout.Powers[1-slot],definition)) throw new InvalidOperationException("Incompatible power pair.");
+        owner.Active[slot].Cleanup(owner.Context); loadout.Replace(slot,definition);
+        var p=Create(id); owner.Active[slot]=p;
+        if (plugin.Mode.Live && owner.Context.Pawn is not null) p.Apply(owner.Context);
+        owner.Context.Tell($"Power {slot+1} is now {definition.Name}: {definition.Description}");
+        if (plugin.Config.PublicPowerAnnouncements) plugin.Feedback.PublicLoadout(player!);
     }
-    private void Replace(int slot,PowerDefinition definition)
+    private static void Cleanup(Owner owner)
+    { foreach (var p in owner.Active.ToArray()) p.Cleanup(owner.Context); owner.Active.Clear(); owner.AppliedPawn=null; owner.Effects.Clear(); }
+    public void Stop(CCSPlayerController? player) { if (Find(player) is { } owner) Cleanup(owner); }
+    public void Clear()
     {
-        if (Loadout is null || !PowerCatalog.Compatible(Loadout.Powers[1-slot],definition)) throw new InvalidOperationException("Incompatible power pair.");
-        _active[slot].Cleanup(_context);
-        Loadout.Replace(slot,definition); var p=Create(definition.Id); _active[slot]=p;
-        if (plugin.Mode.Live && _context.Pawn is not null) p.Apply(_context);
-        _context.Tell($"Power {slot+1} is now {definition.Name}: {definition.Description}");
+        foreach (var owner in _owners.Values.ToArray()) Cleanup(owner);
+        _owners.Clear(); _emptyEffects.Clear(); Volatile.Write(ref _transmission,[]);
     }
-    private void CleanupInstances()
-    { foreach (var p in _active) p.Cleanup(_context); _active.Clear(); _appliedPawn=null; plugin.Effects.Clear(); }
-    public void Clear() { CleanupInstances(); Loadout=null; }
-    public string Status(string id)
+    public void FilterTransmission(CCheckTransmitInfoList clients)
     {
-        var power=_active.FirstOrDefault(p=>p.Id==id);
+        var effects=Volatile.Read(ref _transmission);
+        foreach (var effect in effects) effect.FilterOutlines(clients);
+        foreach (var effect in effects) effect.FilterConcealed(clients);
+    }
+    public string Status(string id,CCSPlayerController? player=null)
+    {
+        var owner=Find(player ?? plugin.Mode.Boss); var power=owner?.Active.FirstOrDefault(p=>p.Id==id);
+        if (power?.Status is { } status) return status;
         if (power?.IsActive==true) return "active until round ends";
-        if (Loadout?.Consumed.Contains(id)==true) return "used this round";
+        if (owner?.Loadout?.Consumed.Contains(id)==true) return "used this round";
         if (power?.Definition.Kind!=PowerKind.Activated) return "automatic";
-        var remaining=Loadout?.Remaining(id,_context.Now) ?? 0;
+        var remaining=owner?.Loadout?.Remaining(id,Server.CurrentTime) ?? 0;
         return remaining>0 ? $"{remaining:0.0}s" : "ready";
     }
 }

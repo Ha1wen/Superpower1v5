@@ -14,9 +14,10 @@ public sealed partial class Plugin
     private Color _persistentOriginalColor;
     private void SchedulePersistentPowerTests()
     {
+        StopProbeBots(true);
         AddTimer(12,()=>Probe("All 18 powers apply; migrated config excludes Yoru and rarity",()=> {
             Require(Mode.Live && Mode.Eligible().Count==6 && Mode.Opponents.Count()==5,"roster");
-            Require(Config.Version==6 && Config.Powers.Count==18 && !Config.Powers.ContainsKey("yoru_flash"),"migration");
+            Require(Config.Version==7 && Config.Powers.Count==18 && !Config.Powers.ContainsKey("yoru_flash"),"migration");
             foreach (var definition in PowerCatalog.All)
             {
                 Powers.NativeProbePair(definition.Id,definition.Id=="infinite_ammo" ? "teleport" : "infinite_ammo");
@@ -26,13 +27,13 @@ public sealed partial class Plugin
             _persistentOriginalColor=Players.AlivePawn(Mode.Boss)!.Render;
             Powers.NativeProbePair("invisibility","wall_vision");
             Require(Powers.Active.All(p=>p.IsActive),"automatic application");
-            Require(Effects.HiddenEntityCount>0 && Effects.OutlineCount==5,"effects absent without activation");
+            Require(Effects.HiddenEntityCount==0 && Effects.OutlineCount==5,"initial sound reveal or automatic wall vision");
         }),TimerFlags.STOP_ON_MAPCHANGE);
         AddTimer(20,()=>Probe("Both passive effects remain active without ability commands",()=> {
             Require(Effects.HiddenEntityCount>0,"invisibility expired");
             Require(Effects.OutlineCount==5,"wall vision expired");
             Require(Powers.Active.All(p=>p.IsActive),"active state lost");
-            Require(Powers.Status("invisibility")=="active until round ends" && Powers.Status("wall_vision")=="active until round ends","status");
+            Require(Powers.Status("invisibility")=="hidden" && Powers.Status("wall_vision")=="active until round ends","status");
         }),TimerFlags.STOP_ON_MAPCHANGE);
         AddTimer(39,()=>Probe("Both effects survive 27 seconds and a slot swap without reset",()=> {
             Require(Effects.HiddenEntityCount>0 && Effects.OutlineCount==5,"long duration");
@@ -48,7 +49,7 @@ public sealed partial class Plugin
             foreach (var entry in Config.Powers) entry.Value.Enabled=entry.Key is "invisibility" or "wall_vision";
             Server.ExecuteCommand("mp_restartgame 1");
         }),TimerFlags.STOP_ON_MAPCHANGE);
-        AddTimer(45,()=>Probe("New round automatically enables both powers only for the new boss",()=> {
+        AddTimer(45,()=>Probe("New round automatically enables both powers for the T boss",()=> {
             Require(Mode.Live && Powers.Loadout!.Powers.Count==2 && Mode.Opponents.Count()==5,"round invariants");
             Require(Powers.Loadout!.Has("invisibility") && Powers.Loadout.Has("wall_vision") && Powers.Active.All(p=>p.IsActive),"new passive loadout inactive");
             Require(Effects.OutlineCount==5 && Effects.HiddenEntityCount>0,"new boss effects absent");

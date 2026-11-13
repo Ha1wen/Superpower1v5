@@ -1,6 +1,7 @@
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Utils;
+using CounterStrikeSharp.API.Modules.Cvars;
 using Superpower1v5.Models;
 using Superpower1v5.Support;
 using GameTrace=CounterStrikeSharp.API.Modules.Utils.Trace;
@@ -30,7 +31,7 @@ public sealed class SecondChance() : Power("second_chance")
     {
         if (!damage.BossVictim || c.Pawn is not { } pawn || damage.Info is not { } info) return false;
         if (c.Now<_protectedUntil) { Zero(info); return true; }
-        if (Math.Ceiling(Math.Max(info.Damage,info.TotalledDamage))<pawn.Health || !c.Loadout.Consumed.Add(Id)) return false;
+        if (Math.Ceiling(ExpectedHealthDamage(damage,pawn))<pawn.Health || !c.Loadout.Consumed.Add(Id)) return false;
         Zero(info); _protectedUntil=c.Now+.4;
         RewindFrame? frame=null; Vector? landing=null;
         foreach (var candidate in _history.Candidates(c.Now,Settings(c).Duration))
@@ -46,7 +47,7 @@ public sealed class SecondChance() : Power("second_chance")
             var raw=pawn.EntityHandle.Raw; var destination=Players.Copy(landing!); var restored=frame;
             // A weapon hit may still be inside lag compensation. Reapply after its rollback.
             c.Plugin.Defer(()=> {
-                if (c.Plugin.Powers.Active.Contains(this) && c.Pawn is { } alive && alive.EntityHandle.Raw==raw)
+                if (c.Contains(this) && c.Pawn is { } alive && alive.EntityHandle.Raw==raw)
                     alive.Teleport(destination,new QAngle(restored.Angles.X,restored.Angles.Y,restored.Angles.Z),new Vector(restored.Velocity.X,restored.Velocity.Y,restored.Velocity.Z));
             });
             Utilities.SetStateChanged(pawn,"CCSPlayerPawn","m_ArmorValue");
@@ -56,6 +57,21 @@ public sealed class SecondChance() : Power("second_chance")
         return true;
     }
     private static void Zero(CTakeDamageInfo info) { info.Damage=0; info.OriginalDamage=0; info.TotalledDamage=0; }
+    private static float ExpectedHealthDamage(DamageEvent damage,CCSPlayerPawn pawn)
+    {
+        var info=damage.Info!; var amount=Math.Max(info.Damage,info.TotalledDamage);
+        // API 380's callback precedes CS2's hitbox/armor scaling. HitGroupId can
+        // still be INVALID here; GetHitGroup reads the actual bullet trace.
+        if (!damage.Bullet || damage.Synthetic || info.HitGroupId!=HitGroup_t.HITGROUP_INVALID) return amount;
+        var group=info.GetHitGroup();
+        if (group is HitGroup_t.HITGROUP_INVALID or HitGroup_t.HITGROUP_GENERIC) return amount;
+        var weapon=Players.AlivePawn(damage.Attacker)?.WeaponServices?.ActiveWeapon.Value?.As<CCSWeaponBase>().VData;
+        var part=group==HitGroup_t.HITGROUP_HEAD ? "head" : "body";
+        var team=damage.Victim.TeamNum==2 ? "t" : "ct";
+        var scale=ConVar<float>.Find($"mp_damage_scale_{team}_{part}")?.Value ?? 1f;
+        var helmet=pawn.ItemServices?.As<CCSPlayer_ItemServices>().HasHelmet==true;
+        return BulletHealthDamage.Estimate(amount,group,weapon?.HeadshotMultiplier ?? 4,scale,pawn.ArmorValue,helmet,weapon?.ArmorRatio ?? 2);
+    }
     private static Vector? Landing(CCSPlayerPawn pawn,RewindFrame frame)
     {
         // Native player capsules can stand slightly inside the bounding-box floor plane.

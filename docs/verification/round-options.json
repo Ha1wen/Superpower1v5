@@ -1,0 +1,130 @@
+[
+  {
+    "name": "Server command enables powers for everyone",
+    "passed": true
+  },
+  {
+    "name": "Six players own distinct pairs and separate loadout objects; setting saved",
+    "passed": true
+  },
+  {
+    "name": "CT Vampirism heals its owner from damage to the boss",
+    "passed": true
+  },
+  {
+    "name": "Removing boss movement powers does not remove CT movement powers",
+    "passed": true
+  },
+  {
+    "name": "CT activated abilities freeze only enemies and use the CT player\u0027s own cooldown",
+    "passed": true
+  },
+  {
+    "name": "CT Second Chance prevents its own lethal damage and retains separate consumption",
+    "passed": true
+  },
+  {
+    "name": "Moving a powered player to spectators clears their effects",
+    "passed": true
+  },
+  {
+    "name": "A spectator\u0027s old pawn cannot regain powers on the next tick",
+    "passed": true
+  },
+  {
+    "name": "Returning from spectators reapplies the player\u0027s own powers",
+    "passed": true
+  },
+  {
+    "name": "CT cluster grenade dispatches to the correct owner",
+    "passed": true
+  },
+  {
+    "name": "CT utility produces four real projectiles without recursion",
+    "passed": true
+  },
+  {
+    "name": "Wall Vision supports several owners",
+    "passed": true
+  },
+  {
+    "name": "Clearing one Wall Vision leaves the other owner\u0027s outline intact",
+    "passed": true
+  },
+  {
+    "name": "Invisibility applies to boss and CT and starts visible",
+    "passed": true
+  },
+  {
+    "name": "Silence hides both bodies and equipment from other clients, preserving own view",
+    "passed": true
+  },
+  {
+    "name": "Weapon-fire event reveals the shooter immediately without revealing other players",
+    "passed": true
+  },
+  {
+    "name": "The player visibly fades between full visibility and concealment",
+    "passed": true
+  },
+  {
+    "name": "Silence conceals again after shooting",
+    "passed": true
+  },
+  {
+    "name": "Reload event makes the player visible",
+    "passed": true
+  },
+  {
+    "name": "A sustained reload prevents an early fade",
+    "passed": true
+  },
+  {
+    "name": "Invisibility recovers after the reload finishes",
+    "passed": true
+  },
+  {
+    "name": "Shift and crouch walking preserve concealment, including footstep events",
+    "passed": true
+  },
+  {
+    "name": "Running reveals even without a footstep event",
+    "passed": true
+  },
+  {
+    "name": "Private loadout announcements never broadcast assigned powers",
+    "passed": true
+  },
+  {
+    "name": "Public visibility command announces every current loadout and persists",
+    "passed": true
+  },
+  {
+    "name": "Visibility toggle returns to private mode",
+    "passed": true
+  },
+  {
+    "name": "Disabling everyone removes CT effects and preserves boss powers and reveal history",
+    "passed": true
+  },
+  {
+    "name": "Round-end reveal includes a dead boss and players whose powers were removed",
+    "passed": true
+  },
+  {
+    "name": "Random promotion moves a different player to T and the former boss to CT",
+    "passed": true
+  },
+  {
+    "name": "Disabling promotion keeps the selected T player on following rounds",
+    "passed": true
+  },
+  {
+    "name": "Everyone mode survives a round reset and per-owner freeze cleanup overlaps safely",
+    "passed": true
+  },
+  {
+    "name": "No runtime error disabled the plugin",
+    "passed": true
+  }
+]
