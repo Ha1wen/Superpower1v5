@@ -7,8 +7,9 @@ if (!$sdk) {
     $sdk=Join-Path $server 'development\.dotnet\dotnet.exe'
     if (!(Test-Path -LiteralPath $sdk)) { $sdk='dotnet' }
 }
-$env:DOTNET_CLI_HOME=Join-Path $server 'development\.dotnet-home'
+if (!$env:DOTNET_CLI_HOME) { $env:DOTNET_CLI_HOME=Join-Path $project 'artifacts\.dotnet-home' }
 $env:DOTNET_CLI_TELEMETRY_OPTOUT='1'
+$env:DOTNET_NOLOGO='1'
 $buildArguments=@('-c','Release','-p:ServerSmoke=false','--nologo')
 if ($CounterStrikeSharpPath) {
     $apiDirectory=(Resolve-Path -LiteralPath $CounterStrikeSharpPath).Path
