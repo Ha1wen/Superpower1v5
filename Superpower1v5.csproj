@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>Superpower1v5</AssemblyName>
+    <Version>1.5.0</Version>
+    <CounterStrikeSharpPath Condition="'$(CounterStrikeSharpPath)' == ''">$(MSBuildThisFileDirectory)..\..\game\csgo\addons\counterstrikesharp\api</CounterStrikeSharpPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(ServerSmoke)' == 'true'">
+    <DefineConstants>$(DefineConstants);SERVER_SMOKE</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="tools\**;Tests\**;artifacts\**" />
+    <Compile Include="Tests\RuntimeProbe.cs" Condition="'$(ServerSmoke)' == 'true'" />
+    <Compile Include="Tests\NewPowerProbe.cs" Condition="'$(ServerSmoke)' == 'true'" />
+    <Compile Include="Tests\PersistentPowerProbe.cs" Condition="'$(ServerSmoke)' == 'true'" />
+    <Compile Include="Tests\RandomKillProbe.cs" Condition="'$(ServerSmoke)' == 'true'" />
+    <Reference Include="CounterStrikeSharp.API">
+      <HintPath>$(CounterStrikeSharpPath)\CounterStrikeSharp.API.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+</Project>

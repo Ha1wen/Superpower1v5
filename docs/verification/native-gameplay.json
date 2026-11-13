@@ -1,0 +1,22 @@
+[
+  {
+    "name": "Direct kill selects one of all six living players without blast effects or Vampirism healing",
+    "passed": true
+  },
+  {
+    "name": "Direct kill stays blocked at 19 seconds",
+    "passed": true
+  },
+  {
+    "name": "After 20 seconds the next kill excludes dead players and still includes the boss",
+    "passed": true
+  },
+  {
+    "name": "Selecting the boss kills them even with Second Chance and safely clears their powers",
+    "passed": true
+  },
+  {
+    "name": "Following a boss self-kill the next round has normal health and one boss with two powers",
+    "passed": true
+  }
+]
