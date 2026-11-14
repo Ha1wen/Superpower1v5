@@ -1,5 +1,5 @@
 {
-  "ConfigVersion": 7,
+  "ConfigVersion": 8,
   "Enabled": true,
   "GameMode": "1v5",
   "NormalHealth": 100,
@@ -217,6 +217,39 @@
       "Radius": 140,
       "Distance": 450,
       "MaxEntities": 32
+    },
+    "infinite_jump": {
+      "Enabled": true,
+      "Cooldown": 0,
+      "Duration": 0.1,
+      "Strength": 301.99,
+      "Chance": 0,
+      "Interval": 1,
+      "Radius": 140,
+      "Distance": 450,
+      "MaxEntities": 8
+    },
+    "random_teleport": {
+      "Enabled": true,
+      "Cooldown": 20,
+      "Duration": 0.1,
+      "Strength": 0,
+      "Chance": 0,
+      "Interval": 1,
+      "Radius": 140,
+      "Distance": 450,
+      "MaxEntities": 8
+    },
+    "forcefield": {
+      "Enabled": true,
+      "Cooldown": 35,
+      "Duration": 10,
+      "Strength": 0,
+      "Chance": 0,
+      "Interval": 1,
+      "Radius": 140,
+      "Distance": 450,
+      "MaxEntities": 8
     }
   }
 }

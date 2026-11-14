@@ -1,3 +1,4 @@
+using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Utils;
 using GameTrace = CounterStrikeSharp.API.Modules.Utils.Trace;
@@ -49,5 +50,38 @@ public static class SafeTeleport
     {
         var ray = GameTrace.TraceEndShape(from, to, ignore, new TraceOptions { InteractsWith = Masks.ShotBrushOnly });
         return !ray.IsAllSolid && ray.Fraction >= .97f;
+    }
+
+    public static bool TryRandom(CCSPlayerPawn pawn)
+    {
+        if (pawn.AbsOrigin is not { } origin) return false;
+        // The nav mesh limits choices to places intended for players. Never sample world-space air.
+        var areas=CCSNavArea.GetAllNavAreas();
+        var candidates=new List<Vector>();
+        if (areas.Count>0)
+        {
+            foreach (var area in areas.OrderBy(_=>Random.Shared.Next()).Take(96))
+            {
+                var center=area.Center;
+                if (float.IsFinite(center.X) && float.IsFinite(center.Y) && float.IsFinite(center.Z)) candidates.Add(center);
+            }
+        }
+        // Community maps without navigation still have valid player spawns.
+        foreach (var name in new[] { "info_player_terrorist","info_player_counterterrorist","info_deathmatch_spawn" })
+            candidates.AddRange(Utilities.FindAllEntitiesByDesignerName<CBaseEntity>(name).Where(e=>e.AbsOrigin is not null).Select(e=>Players.Copy(e.AbsOrigin!)));
+        foreach (var candidate in candidates.OrderBy(_=>Random.Shared.Next()).Take(128))
+        {
+            if (Players.Distance(origin,candidate)<256) continue;
+            var above=new Vector(candidate.X,candidate.Y,candidate.Z+32);
+            var ground=GameTrace.TraceHullShape(above,new(candidate.X,candidate.Y,candidate.Z-96),pawn.Collision.Mins,pawn.Collision.Maxs,pawn,Movement);
+            if (!ground.DidHit() || ground.IsAllSolid || ground.Normal.Z<.7f) continue;
+            var landing=ground.EndPos; landing.Z+=2;
+            var clear=GameTrace.TraceHullShape(landing,landing,pawn.Collision.Mins,pawn.Collision.Maxs,pawn,Movement);
+            if (clear.IsAllSolid || clear.DidHit()) continue;
+            if (Utilities.GetPlayers().Any(p=>Players.AlivePawn(p) is { } other && other.EntityHandle.Raw!=pawn.EntityHandle.Raw && other.AbsOrigin is { } pos && Players.Distance(pos,landing)<64)) continue;
+            pawn.Teleport(landing,null,new Vector(0,0,0));
+            return true;
+        }
+        return false;
     }
 }

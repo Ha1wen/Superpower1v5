@@ -9,5 +9,6 @@ public sealed class Tiny() : Power("tiny")
     public override void Tick(PowerContext context)
     { if (context.Pawn is { } pawn) _scale.Apply(pawn,Settings(context).Strength); }
     public override void PostThink(PowerContext context) => Tick(context);
+    public override void WeaponFire(PowerContext context) => Tick(context);
     public override void Cleanup(PowerContext context) => _scale.Clear();
 }

@@ -54,17 +54,18 @@ public sealed class PowerManager(Plugin plugin)
         "bhop" => new Bhop(), "tiny" => new Tiny(), "sandevistan" => new Sandevistan(),
         "pyromaniac" => new Pyromaniac(), "random_explosion" => new RandomKill(),
         "juggernaut" => new Juggernaut(), "cluster_grenade" => new ClusterGrenade(),
+        "infinite_jump" => new InfiniteJump(), "random_teleport" => new RandomTeleport(), "forcefield" => new Forcefield(),
         _ => throw new ArgumentException($"Unknown power: {id}")
     };
-    public void Roll(bool newRound,CCSPlayerController? player=null)
+    public void Roll(bool newRound,CCSPlayerController? player=null,bool differentPair=false)
     {
         player ??=plugin.Mode.Boss;
         if (player is null) throw new InvalidOperationException("No power recipient.");
-        var owner=Get(player); var pair=_selection.SelectPair(plugin.Config);
+        var owner=Get(player); var pair=differentPair ? _selection.SelectDifferentPair(plugin.Config,owner.Loadout?.Powers) : _selection.SelectPair(plugin.Config);
         Cleanup(owner); owner.Enabled=true;
         if (newRound || owner.Loadout is null) owner.Loadout=new(pair); else owner.Loadout.SetPair(pair);
         owner.Active=pair.Select(p=>Create(p.Id)).ToList(); Apply(owner);
-        if (newRound && plugin.Mode.IsBoss(player) && plugin.Config.EveryoneHasPowers)
+        if (newRound && !plugin.Mode.IsDeathmatch && plugin.Mode.IsBoss(player) && plugin.Config.EveryoneHasPowers)
             foreach (var other in plugin.Mode.Eligible().Where(p=>!plugin.Mode.IsBoss(p))) Roll(true,other);
     }
 #if SERVER_SMOKE
@@ -78,7 +79,7 @@ public sealed class PowerManager(Plugin plugin)
 #endif
     public void ReconcileEveryone()
     {
-        if (!plugin.Mode.Live) return;
+        if (!plugin.Mode.Live || plugin.Mode.IsDeathmatch) return;
         foreach (var owner in _owners.Values.ToArray())
             if (owner.Enabled && !plugin.Mode.IsBoss(Players.Resolve(owner.Raw)) && !plugin.Config.EveryoneHasPowers) { Cleanup(owner); owner.Enabled=false; }
         if (plugin.Config.EveryoneHasPowers)
@@ -116,20 +117,22 @@ public sealed class PowerManager(Plugin plugin)
     public void Impact(float x,float y,float z,CCSPlayerController? player=null) => Dispatch((p,c)=>p.BulletImpact(c,new(x,y,z)),player);
     public void PostThink() => Dispatch((p,c)=>p.PostThink(c),all:true);
     public void Smoke(float x,float y,float z) => Dispatch((p,c)=>p.Smoke(c,new(x,y,z)),all:true);
+    public void Inferno(CInferno inferno) => Dispatch((p,c)=> { if (p is Pyromaniac pyro) pyro.InfernoStarted(c,inferno); },all:true);
     public void Projectile(CBaseCSGrenadeProjectile entity)
     {
         var thrower=Players.Controller(entity.Thrower.Value);
         if (thrower is not null) Dispatch((p,c)=>p.Projectile(c,entity),thrower);
     }
-    private static DamageEvent ForOwner(DamageEvent hit,Owner owner) => hit with {
+    private DamageEvent ForOwner(DamageEvent hit,Owner owner) => hit with {
         BossVictim=hit.Victim.EntityHandle.Raw==owner.Raw,
-        BossAttacker=hit.Attacker?.EntityHandle.Raw==owner.Raw && hit.Attacker.TeamNum!=hit.Victim.TeamNum
+        BossAttacker=hit.Attacker?.EntityHandle.Raw==owner.Raw && plugin.Mode.Enemies(hit.Attacker,hit.Victim)
     };
     public bool BeforeDamage(DamageEvent hit)
     {
         var relevant=_owners.Values.Where(o=>o.Enabled && (o.Raw==hit.Victim.EntityHandle.Raw || o.Raw==hit.Attacker?.EntityHandle.Raw)).ToArray();
         foreach (var owner in relevant) foreach (var p in owner.Active.ToArray()) p.ModifyDamage(owner.Context,ForOwner(hit,owner));
-        foreach (var owner in relevant) foreach (var p in owner.Active.ToArray()) if (p.PreventLethal(owner.Context,ForOwner(hit,owner))) return true;
+        foreach (var defense in relevant.SelectMany(o=>o.Active.Select(p=>(owner:o,power:p))).OrderByDescending(x=>x.power.DefensePriority))
+            if (defense.power.PreventLethal(defense.owner.Context,ForOwner(hit,defense.owner))) return true;
         return false;
     }
     public void AfterDamage(DamageDealt hit)
@@ -176,7 +179,10 @@ public sealed class PowerManager(Plugin plugin)
     }
     private static void Cleanup(Owner owner)
     { foreach (var p in owner.Active.ToArray()) p.Cleanup(owner.Context); owner.Active.Clear(); owner.AppliedPawn=null; owner.Effects.Clear(); }
-    public void Stop(CCSPlayerController? player) { if (Find(player) is { } owner) Cleanup(owner); }
+    public void Stop(CCSPlayerController? player) { if (Find(player) is { } owner) { Cleanup(owner); if (plugin.Mode.IsDeathmatch) owner.Enabled=false; } }
+    public bool IsConcealed(CCSPlayerController? player) => GetActive(player).OfType<Invisibility>().Any(p=>p.Concealed);
+    public bool IsInvulnerable(CCSPlayerController? player) => GetActive(player).OfType<Forcefield>().Any(p=>p.IsActive);
+    public bool IsRecovering(CCSPlayerController? player) => GetActive(player).OfType<SecondChance>().Any(p=>p.Recovering);
     public void Clear()
     {
         foreach (var owner in _owners.Values.ToArray()) Cleanup(owner);
@@ -186,14 +192,13 @@ public sealed class PowerManager(Plugin plugin)
     {
         var effects=Volatile.Read(ref _transmission);
         foreach (var effect in effects) effect.FilterOutlines(clients);
-        foreach (var effect in effects) effect.FilterConcealed(clients);
     }
     public string Status(string id,CCSPlayerController? player=null)
     {
         var owner=Find(player ?? plugin.Mode.Boss); var power=owner?.Active.FirstOrDefault(p=>p.Id==id);
         if (power?.Status is { } status) return status;
         if (power?.IsActive==true) return "active until round ends";
-        if (owner?.Loadout?.Consumed.Contains(id)==true) return "used this round";
+        if (owner?.Loadout?.Consumed.Contains(id)==true) return plugin.Mode.IsDeathmatch ? "used this life" : "used this round";
         if (power?.Definition.Kind!=PowerKind.Activated) return "automatic";
         var remaining=owner?.Loadout?.Remaining(id,Server.CurrentTime) ?? 0;
         return remaining>0 ? $"{remaining:0.0}s" : "ready";

@@ -36,6 +36,9 @@ public sealed class PowerSettings
         "tiny" => new() { Strength = .5f },
         "juggernaut" => new() { Strength = 500 },
         "cluster_grenade" => new() { Strength = 4, MaxEntities = 32 },
+        "infinite_jump" => new() { Strength = 301.99f },
+        "random_teleport" => new() { Cooldown = 20 },
+        "forcefield" => new() { Duration = 10, Cooldown = 35 },
         _ => new()
     };
 
@@ -46,6 +49,7 @@ public sealed class PowerSettings
         Duration = Safe(Duration, .1f, 60, Math.Max(.1f, d.Duration));
         if (id is "invisibility" or "wall_vision") { Duration = 0; Cooldown = 0; }
         if (id == "random_explosion") Duration = 0;
+        if (id == "forcefield") { Duration=10; Cooldown=Safe(Cooldown,10,600,35); }
         if (id == "second_chance") Duration = Safe(Duration,1,8,3);
         Interval = Safe(Interval, .05f, 300, d.Interval);
         Radius = Safe(Radius, 32, 500, d.Radius);
@@ -65,6 +69,7 @@ public sealed class PowerSettings
             "knockback" => (50f, 2000f),
             "second_chance" => (1f, 100f),
             "bhop" => (200f, 500f),
+            "infinite_jump" => (200f, 500f),
             "pyromaniac" => (1f,100f),
             "random_explosion" => (100f,1000f),
             "tiny" => (.3f,.8f),
@@ -82,7 +87,7 @@ public sealed class PowerSettings
 public sealed class PluginConfig : BasePluginConfig
 {
     [JsonPropertyName("ConfigVersion")]
-    public override int Version { get; set; } = 7;
+    public override int Version { get; set; } = 8;
     public bool Enabled { get; set; } = true;
     public string GameMode { get; set; } = "1v5";
     public int NormalHealth { get; set; } = 100;
@@ -112,7 +117,7 @@ public sealed class PluginConfig : BasePluginConfig
         SuperpoweredPlayerCount = 1;
         PowersPerRound = 2;
         AllowDuplicatePowers = false;
-        GameMode = "1v5";
+        GameMode = string.Equals(GameMode,"deathmatch",StringComparison.OrdinalIgnoreCase) ? "deathmatch" : "1v5";
         MaxOpponents = Math.Clamp(MaxOpponents, 1, 5);
         SuperpoweredPlayerTeam = "T";
         if (!float.IsFinite(InvisibilityQuietDelay) || InvisibilityQuietDelay is <0 or >10) InvisibilityQuietDelay=.5f;
@@ -143,6 +148,7 @@ public sealed class PluginConfig : BasePluginConfig
         }
         if (Version < 6) { Powers["second_chance"].Duration=3; Version=6; }
         if (Version < 7) Version=7;
+        if (Version < 8) Version=8;
     }
 
     public bool IsAvailable(PowerDefinition power) => Powers[power.Id].Enabled && !PowerBlacklist.Contains(power.Id);

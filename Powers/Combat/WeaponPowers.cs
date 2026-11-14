@@ -8,8 +8,12 @@ namespace Superpower1v5.Powers.Combat;
 public sealed class RapidFire() : Power("rapid_fire")
 {
     private readonly Dictionary<uint,(int tick,float ratio)> _original = new();
+    private readonly RecoilControl _recoil=new();
+    public override void Apply(PowerContext c) { if (c.Boss is { } player) _recoil.Apply(player); if (c.Pawn is { } pawn) RecoilControl.Reset(pawn); }
+    public override void PostThink(PowerContext c) { if (c.Pawn is { } pawn) RecoilControl.Reset(pawn); }
     public override void WeaponFire(PowerContext c)
     {
+        if (c.Pawn is { } pawn) RecoilControl.Reset(pawn);
         var raw = c.Pawn?.WeaponServices?.ActiveWeapon.Value?.EntityHandle.Raw;
         if (raw is null) return;
         c.Plugin.Defer(() => {
@@ -38,13 +42,14 @@ public sealed class RapidFire() : Power("rapid_fire")
     }
     public override void Tick(PowerContext c)
     {
+        if (c.Pawn is { } pawn) RecoilControl.Reset(pawn);
         foreach (var raw in _original.Keys.ToArray())
         {
             var w = Players.Entity<CBasePlayerWeapon>(raw);
             if (w is not { IsValid: true } || c.Pawn is not { } p || w.OwnerEntity.Raw != p.EntityHandle.Raw) Restore(raw);
         }
     }
-    public override void Cleanup(PowerContext c) { foreach (var raw in _original.Keys.ToArray()) Restore(raw); }
+    public override void Cleanup(PowerContext c) { foreach (var raw in _original.Keys.ToArray()) Restore(raw); _recoil.Clear(); }
 }
 public sealed class ExplosiveBullets() : Power("explosive_bullets")
 {

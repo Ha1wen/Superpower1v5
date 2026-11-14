@@ -8,45 +8,59 @@ namespace Superpower1v5.Powers.Combat;
 
 public sealed class Pyromaniac() : Power("pyromaniac")
 {
-    private sealed class Pool(Vector position,uint visual,double until)
-    { public Vector Position { get; }=position; public uint Visual { get; }=visual; public double Until { get; set; }=until; }
-    private readonly List<Pool> _pools=[];
-    private double _nextImpact,_nextDamage;
-    public int PoolCount => _pools.Count;
-    public override void BulletImpact(PowerContext context,Vector impact)
+    private sealed class Fire(Vector position,uint projectile,double created,double until)
     {
-        if (context.Now<_nextImpact || context.Pawn is not { } boss) return;
-        _nextImpact=context.Now+Settings(context).Interval;
-        var above=new Vector(impact.X,impact.Y,impact.Z+16);
-        var ground=GameTrace.TraceEndShape(above,new(impact.X,impact.Y,impact.Z-192),boss,new() { InteractsWith=Masks.SolidBrushOnly });
+        public Vector Position { get; }=position;
+        public uint Projectile { get; }=projectile;
+        public uint? Inferno;
+        public double Created { get; }=created;
+        public double Until { get; }=until;
+    }
+    private readonly List<Fire> _fires=[];
+    private double _nextImpact;
+    public int PoolCount => _fires.Count;
+    public int InfernoCount => _fires.Count(f=>f.Inferno is { } raw && Players.Entity<CInferno>(raw) is { IsValid:true });
+    public override void BulletImpact(PowerContext c,Vector impact)
+    {
+        if (c.Now<_nextImpact || c.Pawn is not { } pawn) return;
+        var settings=Settings(c);
+        var ground=GameTrace.TraceEndShape(new(impact.X,impact.Y,impact.Z+16),new(impact.X,impact.Y,impact.Z-192),pawn,new() { InteractsWith=Masks.SolidBrushOnly });
         if (!ground.DidHit() || ground.IsAllSolid || ground.Normal.Z<.55f) return;
-        var position=ground.EndPos; position.Z+=3;
-        var existing=_pools.FirstOrDefault(pool=>Players.Distance(pool.Position,position)<Settings(context).Radius*.65f);
-        if (existing is not null) { existing.Until=context.Now+Settings(context).Duration; return; }
-        while (_pools.Count>=Settings(context).MaxEntities) Remove(context,_pools[0]);
-        var visual=context.Plugin.Feedback.Particle("particles/inferno_fx/molotov_fire01.vpcf",position);
-        if (visual==0) return;
-        _pools.Add(new(position,visual,context.Now+Settings(context).Duration));
+        var position=ground.EndPos; position.Z+=8;
+        if (_fires.Any(f=>Players.Distance(f.Position,position)<96)) return;
+        _nextImpact=c.Now+settings.Interval;
+        while (_fires.Count>=settings.MaxEntities) Remove(c,_fires[0]);
+        // Real armed Molotovs retain CS2's spreading, damage ramp, sound and smoke interaction.
+        var projectile=GrenadeFactory.Create("molotov_projectile",position,new Vector(0,0,-160),pawn,46);
+        if (projectile is not { IsValid:true }) return;
+        var raw=projectile.EntityHandle.Raw;
+        c.Plugin.TrackEntity(raw); c.Plugin.SuppressCluster(raw);
+        _fires.Add(new(position,raw,c.Now,c.Now+settings.Duration));
     }
-    public override void SlowTick(PowerContext context)
+    public void InfernoStarted(PowerContext c,CInferno inferno)
     {
-        foreach (var pool in _pools.Where(p=>p.Until<=context.Now).ToArray()) Remove(context,pool);
-        if (_pools.Count==0 || context.Now<_nextDamage || context.Boss is not { } boss || context.Pawn is not { } owner) return;
-        const float interval=.25f;
-        _nextDamage=context.Now+interval;
-        foreach (var opponent in context.Opponents.ToArray())
-        {
-            if (Players.AlivePawn(opponent) is not { } pawn || pawn.AbsOrigin is not { } position) continue;
-            var center=new Vector(position.X,position.Y,position.Z+16);
-            if (!_pools.Any(pool=>Math.Abs(position.Z-pool.Position.Z)<72 &&
-                Players.Distance(pool.Position,position)<=Settings(context).Radius && SafeTeleport.Visible(pool.Position,center,owner))) continue;
-            context.Plugin.Damage.Deal(opponent.EntityHandle.Raw,boss.EntityHandle.Raw,Settings(context).Strength*interval,DamageTypes_t.DMG_BURN);
-        }
+        if (inferno.AbsOrigin is not { } origin) return;
+        var fire=_fires.Where(f=>f.Inferno is null && c.Now-f.Created<2 && Players.Distance(f.Position,origin)<128)
+            .OrderBy(f=>Players.Distance(f.Position,origin)).FirstOrDefault();
+        if (fire is null) return;
+        if (inferno.OwnerEntity.IsValid && inferno.OwnerEntity.Raw!=c.Pawn?.EntityHandle.Raw && inferno.OwnerEntity.Raw!=fire.Projectile) return;
+        fire.Inferno=inferno.EntityHandle.Raw; c.Plugin.TrackEntity(inferno.EntityHandle.Raw);
     }
-    public override void Smoke(PowerContext context,Vector origin)
-    { foreach (var pool in _pools.Where(p=>Players.Distance(p.Position,origin)<=Settings(context).Radius+144).ToArray()) Remove(context,pool); }
-    private void Remove(PowerContext context,Pool pool)
-    { context.Plugin.RemoveTrackedEntity(pool.Visual); _pools.Remove(pool); }
-    public override void Cleanup(PowerContext context)
-    { foreach (var pool in _pools.ToArray()) Remove(context,pool); }
+    public override void SlowTick(PowerContext c)
+    {
+        foreach (var fire in _fires.ToArray())
+            if (fire.Until<=c.Now || c.Now-fire.Created>2 &&
+                (fire.Inferno is not { } raw || Players.Entity<CInferno>(raw) is not { IsValid:true })) Remove(c,fire);
+    }
+    public override void Smoke(PowerContext c,Vector origin)
+    {
+        foreach (var fire in _fires.Where(f=>Players.Distance(f.Position,origin)<=144).ToArray()) Remove(c,fire);
+    }
+    private void Remove(PowerContext c,Fire fire)
+    {
+        c.Plugin.RemoveTrackedEntity(fire.Projectile);
+        if (fire.Inferno is { } raw) c.Plugin.RemoveTrackedEntity(raw);
+        _fires.Remove(fire);
+    }
+    public override void Cleanup(PowerContext c) { foreach (var fire in _fires.ToArray()) Remove(c,fire); }
 }

@@ -8,7 +8,7 @@ public sealed class RandomKill(Random? random=null) : Power("random_explosion")
     public override bool Activate(PowerContext context)
     {
         if (context.Pawn is null) return false;
-        var candidates=context.Plugin.Mode.Eligible().Where(p=>Players.AlivePawn(p) is not null).ToArray();
+        var candidates=context.Plugin.Mode.Eligible().Where(p=>Players.AlivePawn(p) is not null && !context.Plugin.Powers.IsInvulnerable(p)).ToArray();
         if (candidates.Length==0) return false;
         var target=candidates[_random.Next(candidates.Length)];
         if (Players.AlivePawn(target) is not { } pawn) return false;

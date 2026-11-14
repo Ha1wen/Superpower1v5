@@ -1,0 +1,82 @@
+[
+  {
+    "name": "One T boss and five CT opponents run with the expanded catalog",
+    "passed": true
+  },
+  {
+    "name": "Tiny scales body/collision once and aligns standing and crouched eye heights",
+    "passed": true
+  },
+  {
+    "name": "Rapid Fire clears server recoil and camera punch without a global recoil change",
+    "passed": true
+  },
+  {
+    "name": "Rapid Fire still shortens the next firing delay",
+    "passed": true
+  },
+  {
+    "name": "Random Teleport lands at a different clear place and starts its cooldown",
+    "passed": true
+  },
+  {
+    "name": "Invisibility starts a safe render-only fade",
+    "passed": true
+  },
+  {
+    "name": "Silent invisibility hides model/shadow and suppresses engine radar spotting",
+    "passed": true
+  },
+  {
+    "name": "A planted bomb and unrelated owner-linked entities remain visible",
+    "passed": true
+  },
+  {
+    "name": "Invisibility survives repeated noisy/quiet transitions with a weapon swap",
+    "passed": true
+  },
+  {
+    "name": "Wall Vision cannot put a silent invisible player back on radar",
+    "passed": true
+  },
+  {
+    "name": "Second Chance blocks a lethal hit immediately after Teleport and rejects overlapping blink",
+    "passed": true
+  },
+  {
+    "name": "Deferred Second Chance returns to the pre-teleport historical position",
+    "passed": true
+  },
+  {
+    "name": "Second Chance handles an explicitly populated lethal head hitgroup",
+    "passed": true
+  },
+  {
+    "name": "Forcefield blocks lethal damage before consuming Second Chance",
+    "passed": true
+  },
+  {
+    "name": "Forcefield expires after ten seconds while its cooldown continues",
+    "passed": true
+  },
+  {
+    "name": "Forcefield removal immediately restores vulnerability",
+    "passed": true
+  },
+  {
+    "name": "Infinite Jump preserves horizontal velocity and requires another press for each air jump",
+    "passed": true
+  },
+  {
+    "name": "Pyromaniac creates a real armed Molotov at a floor impact",
+    "passed": true
+  },
+  {
+    "name": "Pyromaniac spreads native inferno flames, damages enemies and avoids cluster recursion",
+    "passed": true
+  },
+  {
+    "name": "Native smoke extinguishes Pyromaniac and owned fire cleans up",
+    "passed": true
+  }
+]

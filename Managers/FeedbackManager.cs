@@ -15,6 +15,12 @@ public sealed class FeedbackManager(Plugin plugin)
     { if ((player ?? plugin.Mode.Boss) is { } owner) _centerReservedUntil[owner.EntityHandle.Raw]=until; }
     public void Round()
     {
+        if (plugin.Mode.IsDeathmatch)
+        {
+            _centerReservedUntil.Clear(); _nextHud=0;
+            foreach (var player in plugin.Powers.PoweredPlayers) Loadout(player);
+            return;
+        }
         if (plugin.Mode.Boss is not { } boss || plugin.Powers.Loadout is null) return;
         _centerReservedUntil.Clear(); _nextHud=0;
         plugin.Broadcast($"SUPERPOWER ROUND | PLAYER: {boss.PlayerName}");

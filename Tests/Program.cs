@@ -23,8 +23,8 @@ void Check(bool success,string message) { if (!success) throw new Exception(mess
 void Reject(Action action) { try { action(); } catch (ArgumentException) { return; } catch (InvalidOperationException) { return; } throw new Exception("Invalid input was accepted."); }
 PluginConfig Default() { var c=new PluginConfig(); c.Validate(); return c; }
 
-tests.Add(("All 18 powers have unique IDs and concrete implementations",()=> {
-    Check(PowerCatalog.All.Count==18 && PowerCatalog.All.Select(p=>p.Id).Distinct().Count()==18,"Catalog count or duplicate IDs");
+tests.Add(("All 21 powers have unique IDs and concrete implementations",()=> {
+    Check(PowerCatalog.All.Count==21 && PowerCatalog.All.Select(p=>p.Id).Distinct().Count()==21,"Catalog count or duplicate IDs");
     foreach (var p in PowerCatalog.All) Check(PowerManager.Create(p.Id).Id==p.Id,"Factory missing "+p.Id);
 }));
 tests.Add(("Mode configuration repairs invalid and null input",()=> {
@@ -32,7 +32,7 @@ tests.Add(("Mode configuration repairs invalid and null input",()=> {
         MaxOpponents=88,SuperpoweredPlayerTeam="bogus",Powers=null!,PowerBlacklist=null! };
     c.Validate();
     Check(c.NormalHealth==100 && c.SuperpoweredPlayerCount==1 && c.PowersPerRound==2 && !c.AllowDuplicatePowers,"Mode invariant violated");
-    Check(c.MaxOpponents==5 && c.SuperpoweredPlayerTeam=="T" && c.Powers.Count==18,"Defaults not repaired");
+    Check(c.MaxOpponents==5 && c.SuperpoweredPlayerTeam=="T" && c.Powers.Count==21,"Defaults not repaired");
     c.Powers["teleport"].Distance=float.NaN; c.Powers["rapid_fire"].Strength=99; c.Validate();
     Check(c.Powers["teleport"].Distance==0 && c.Powers["rapid_fire"].Strength==1.6f,"Unsafe tuning accepted");
 }));
@@ -48,8 +48,8 @@ tests.Add(("50,000 rounds give every power equal probability in both slots",()=>
     for (var i=0;i<n;i++) { var pair=s.SelectPair(c); first[pair[0].Id]++; second[pair[1].Id]++; }
     foreach (var id in first.Keys)
     {
-        Check(Math.Abs((double)first[id]/n-1.0/18)<.005,$"First slot biased: {id}: {first[id]}");
-        Check(Math.Abs((double)second[id]/n-1.0/18)<.005,$"Second slot biased: {id}: {second[id]}");
+        Check(Math.Abs((double)first[id]/n-1.0/21)<.005,$"First slot biased: {id}: {first[id]}");
+        Check(Math.Abs((double)second[id]/n-1.0/21)<.005,$"Second slot biased: {id}: {second[id]}");
     }
 }));
 tests.Add(("Blacklists, disabled powers and insufficient pools are safe",()=> {
@@ -107,9 +107,9 @@ tests.Add(("Every administrator entry point requires CounterStrikeSharp permissi
     Check(admin.Count==12,"Missing admin commands");
     foreach (var m in admin) Check(m.GetCustomAttributes<RequiresPermissions>().Any(),"Unprotected command: "+m.Name);
 }));
-tests.Add(("Default configuration round-trips all 18 power settings",()=> {
+tests.Add(("Default configuration round-trips all 21 power settings",()=> {
     var c=Default(); var json=JsonSerializer.Serialize(c); var copy=JsonSerializer.Deserialize<PluginConfig>(json)!; copy.Validate();
-    Check(copy.Powers.Count==18 && copy.Powers["vampirism"].Strength==1 && copy.Powers["teleport"].Cooldown==15,"Config round-trip failure");
+    Check(copy.Powers.Count==21 && copy.Powers["vampirism"].Strength==1 && copy.Powers["teleport"].Cooldown==15,"Config round-trip failure");
 }));
 tests.Add(("Removed powers cannot be selected, assigned, or retained in migrated config",()=> {
     var retired=new[] { "super_jump","double_jump","regeneration","damage_resistance","glass_cannon","freeze_shot","damage_reflection","lucky_shot","randomizer","yoru_flash" };
@@ -119,7 +119,7 @@ tests.Add(("Removed powers cannot be selected, assigned, or retained in migrated
     c.Powers["teleport"].Distance=450; c.Powers["teleport"].Cooldown=7; c.Powers["explosive_bullets"].Strength=18;
     c.Validate();
     Check(retired.All(id=>!c.Powers.ContainsKey(id) && !PowerCatalog.All.Any(p=>p.Id==id)),"Removed power survived");
-    Check(c.Version==7 && c.Powers["super_speed"].Strength==2.5f && c.Powers["vampirism"].Strength==1 && c.Powers["explosive_bullets"].Strength==55,"Balance migration failed");
+    Check(c.Version==8 && c.Powers["super_speed"].Strength==2.5f && c.Powers["vampirism"].Strength==1 && c.Powers["explosive_bullets"].Strength==55,"Balance migration failed");
     Check(c.Powers["teleport"].Distance==0 && c.Powers["teleport"].Cooldown==7,"Migration lost customized cooldown");
 }));
 tests.Add(("Unlimited teleport uses a finite world trace with no old 1200-unit clamp",()=> {
@@ -155,7 +155,7 @@ tests.Add(("Version 2 migration adds retained new powers and preserves customize
     var added=new[] { "bhop","sandevistan","pyromaniac","random_explosion","tiny" };
     foreach (var id in added) c.Powers.Remove(id);
     c.Powers["super_speed"].Strength=3; c.Powers["teleport"].Cooldown=8; c.Validate();
-    Check(c.Version==7 && c.Powers.Count==18 && added.All(c.Powers.ContainsKey),"Missing new powers");
+    Check(c.Version==8 && c.Powers.Count==21 && added.All(c.Powers.ContainsKey),"Missing new powers");
     Check(c.Powers["super_speed"].Strength==3 && c.Powers["teleport"].Cooldown==8,"Customized settings changed");
     Check(c.Powers["sandevistan"].Duration==10 && c.Powers["random_explosion"].Duration==0 && c.Powers["random_explosion"].Cooldown==20,"Requested durations changed");
 }));
@@ -181,7 +181,7 @@ tests.Add(("Version 3 JSON drops rarities and Yoru while preserving unrelated tu
      "invisibility":{"Duration":5,"Cooldown":25,"Strength":40},"wall_vision":{"Duration":6,"Cooldown":25}}}
     """;
     var c=JsonSerializer.Deserialize<PluginConfig>(old)!; c.Validate(); var json=JsonSerializer.Serialize(c);
-    Check(c.Version==7 && c.Powers.Count==18 && !json.Contains("RarityWeights") && !json.Contains("yoru_flash"),"Removed configuration survived");
+    Check(c.Version==8 && c.Powers.Count==21 && !json.Contains("RarityWeights") && !json.Contains("yoru_flash"),"Removed configuration survived");
     Check(c.Powers["super_speed"].Strength==3 && c.Powers["teleport"].Cooldown==8 && c.Powers["invisibility"].Strength==40,"Customized settings lost");
     Check(typeof(PowerDefinition).GetProperty("Rarity") is null,"Rarity remains in the catalog model");
 }));
@@ -190,7 +190,7 @@ tests.Add(("Version 4 migration makes explosions immediate with a 20-second cool
     c.Powers["random_explosion"].Duration=20; c.Powers["random_explosion"].Cooldown=45;
     c.Powers["random_explosion"].Strength=600; c.Powers["teleport"].Cooldown=8;
     c.Validate();
-    Check(c.Version==7 && c.Powers["random_explosion"].Duration==0 && c.Powers["random_explosion"].Cooldown==20,"Old fuse/cooldown survived");
+    Check(c.Version==8 && c.Powers["random_explosion"].Duration==0 && c.Powers["random_explosion"].Cooldown==20,"Old fuse/cooldown survived");
     Check(c.Powers["random_explosion"].Strength==600 && c.Powers["teleport"].Cooldown==8,"Other tuning changed");
     var loadout=new RoundLoadout([PowerCatalog.Get("random_explosion"),PowerCatalog.Get("infinite_ammo")]);
     loadout.StartCooldown("random_explosion",10,c.Powers["random_explosion"].Cooldown);
@@ -206,7 +206,7 @@ tests.Add(("Version 5 migration adds Juggernaut and Cluster Grenade and preserve
     var c=Default(); c.Version=5; c.RotateSuperpoweredPlayer=true; c.SuperpoweredPlayerTeam="CT";
     c.Powers.Remove("juggernaut"); c.Powers.Remove("cluster_grenade"); c.Powers["second_chance"].Duration=.1f;
     c.Powers["teleport"].Cooldown=8; c.Validate();
-    Check(c.Version==7 && c.Powers.Count==18 && c.SuperpoweredPlayerTeam=="T" && c.RotateSuperpoweredPlayer,"team/config migration");
+    Check(c.Version==8 && c.Powers.Count==21 && c.SuperpoweredPlayerTeam=="T" && c.RotateSuperpoweredPlayer,"team/config migration");
     Check(c.Powers["juggernaut"].Strength==500 && c.Powers["cluster_grenade"].Strength==4 && c.Powers["second_chance"].Duration==3,"new settings");
     Check(c.Powers["teleport"].Cooldown==8,"unrelated tuning changed");
 }));
@@ -261,6 +261,40 @@ tests.Add(("Lethal bullet prediction includes head/stomach/leg scaling, helmet a
     Check(BulletHealthDamage.Estimate(35,HitGroup_t.HITGROUP_HEAD,4,1,100,true,1.55f)>100,"lethal helmet hit missed");
     Check(BulletHealthDamage.Estimate(100,HitGroup_t.HITGROUP_CHEST,4,1,10,false,1)==80,"low armor depletion");
     Check(BulletHealthDamage.Estimate(35,HitGroup_t.HITGROUP_HEAD,4,.5f,0,false,2)==70,"team scaling");
+}));
+tests.Add(("Deathmatch rerolls a different pair, resets life state, and respects a restricted pool",()=> {
+    var selection=new SelectionEngine(new Random(123)); var config=Default();
+    IReadOnlyList<PowerDefinition> previous=[PowerCatalog.Get("teleport"),PowerCatalog.Get("second_chance")];
+    for (var i=0;i<1000;i++)
+    {
+        var next=selection.SelectDifferentPair(config,previous);
+        Check(!next.Select(p=>p.Id).ToHashSet().SetEquals(previous.Select(p=>p.Id)),"Deathmatch repeated the old pair");
+        var life=new RoundLoadout(next);
+        Check(life.Consumed.Count==0 && life.Remaining("teleport",0)==0,"Previous-life state leaked");
+        previous=next;
+    }
+    foreach (var entry in config.Powers) entry.Value.Enabled=entry.Key is "teleport" or "infinite_ammo";
+    var only=selection.SelectDifferentPair(config,[PowerCatalog.Get("teleport"),PowerCatalog.Get("infinite_ammo")]);
+    Check(only.Count==2 && only.All(config.IsAvailable),"Two-power pool became impossible to respawn with");
+}));
+tests.Add(("Deathmatch detection supports native mode and config without changing competitive defaults",()=> {
+    Check(ModeController.DeathmatchMode("1v5",1,2),"Native deathmatch not detected");
+    Check(ModeController.DeathmatchMode("deathmatch",0,1),"Explicit deathmatch ignored");
+    Check(!ModeController.DeathmatchMode("1v5",0,1) && !ModeController.DeathmatchMode("1v5",1,0),"Competitive/arms race misdetected");
+    var config=Default(); config.GameMode="deathmatch"; config.Validate(); Check(config.GameMode=="deathmatch","Validation removed deathmatch");
+}));
+tests.Add(("Version 8 adds new powers while preserving old tuning and validates forcefield",()=> {
+    var config=Default(); config.Version=7;
+    foreach (var id in new[] { "infinite_jump","random_teleport","forcefield" }) config.Powers.Remove(id);
+    config.Powers["teleport"].Cooldown=9; config.Validate();
+    Check(config.Version==8 && config.Powers.Count==21 && config.Powers["teleport"].Cooldown==9,"Migration lost old tuning");
+    Check(config.Powers["random_teleport"].Cooldown==20 && config.Powers["forcefield"].Cooldown==35 && config.Powers["forcefield"].Duration==10,"New power defaults");
+    config.Powers["forcefield"].Cooldown=0; config.Powers["forcefield"].Duration=99; config.Powers["infinite_jump"].Strength=float.NaN; config.Validate();
+    Check(config.Powers["forcefield"].Cooldown==35 && config.Powers["forcefield"].Duration==10 && config.Powers["infinite_jump"].Strength==301.99f,"Unsafe new power settings");
+}));
+tests.Add(("Tiny camera height scales once and follows crouch interpolation",()=> {
+    Check(PlayerScale.EyeHeight(64,0,.5f)==32 && PlayerScale.EyeHeight(64,1,.5f)==23,"Wrong tiny standing/crouch firing height");
+    Check(PlayerScale.EyeHeight(64,.5f,.5f)==27.5f && PlayerScale.EyeHeight(64,2,1)==46,"Crouch interpolation or clamp");
 }));
 var failed=0;
 foreach (var (name,action) in tests)

@@ -34,9 +34,13 @@ public sealed partial class Plugin
         Logger.LogInformation("FEEDBACK PROBE authorized for isolated PID {Pid}; module={Module}",Environment.ProcessId,ModuleDirectory);
         Server.NextWorldUpdate(()=> {
             Server.ExecuteCommand("sv_hibernate_when_empty 0"); Server.ExecuteCommand("bot_join_after_player 0");
-            Server.ExecuteCommand("bot_quota_mode normal"); Server.ExecuteCommand("bot_quota 6"); Server.ExecuteCommand("bot_stop 1");
-            Server.ExecuteCommand("mp_freezetime 1"); Server.ExecuteCommand("mp_warmup_end"); Server.ExecuteCommand("mp_restartgame 1");
+            Server.ExecuteCommand("bot_join_team any"); Server.ExecuteCommand("bot_quota_mode normal"); Server.ExecuteCommand("bot_quota 6"); Server.ExecuteCommand("bot_stop 1");
+            if (!Mode.IsDeathmatch) { Server.ExecuteCommand("mp_freezetime 1"); Server.ExecuteCommand("mp_warmup_end"); Server.ExecuteCommand("mp_restartgame 1"); }
         });
+        if (ProbeDirectory.Contains("ability-update-native",StringComparison.OrdinalIgnoreCase))
+        { ScheduleAbilityUpdateProbe(); return; }
+        if (ProbeDirectory.Contains("deathmatch-update-native",StringComparison.OrdinalIgnoreCase))
+        { ScheduleDeathmatchUpdateProbe(); return; }
         if (ProbeDirectory.Contains("new-powers-native",StringComparison.OrdinalIgnoreCase))
         { ScheduleNewPowerTests(); return; }
         if (ProbeDirectory.Contains("persistent-native",StringComparison.OrdinalIgnoreCase))
@@ -85,7 +89,7 @@ public sealed partial class Plugin
             Require(Mode.Eligible().All(p=>Players.AlivePawn(p)?.Health==100),"health");
             _probeFirstBoss=Players.Key(Mode.Boss!);
         });
-        Probe("All 18 powers construct and apply in the engine",()=> {
+        Probe("All 21 powers construct and apply in the engine",()=> {
             foreach (var definition in PowerCatalog.All)
             {
                 Powers.NativeProbePair(definition.Id,definition.Id=="infinite_ammo" ? "teleport" : "infinite_ammo");

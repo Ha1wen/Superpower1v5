@@ -3,6 +3,7 @@ using System.Text.Json;
 
 var root=Path.GetFullPath(args.Length>0 ? args[0] : @"C:\cs2_server");
 var artifacts=args.Length>1 ? Path.GetFullPath(args[1]) : Path.Combine(root,@"development\Superpower1v5\artifacts");
+var gameAlias=args.Length>2 ? args[2] : "competitive";
 Directory.CreateDirectory(artifacts);
 var output=Path.Combine(artifacts,"server-smoke-output.txt");
 using var log=new StreamWriter(output,false) { AutoFlush=true };
@@ -22,7 +23,7 @@ var start=new ProcessStartInfo(Path.Combine(root,@"game\bin\win64\cs2.exe"))
 };
 start.Environment["SUPERPOWER1V5_PROBE_ARTIFACTS"]=artifacts;
 foreach (var arg in new[] { "-basedir",Path.Combine(root,"game"),"-game","csgo","-dedicated","-console","-insecure","-ip","127.0.0.1","-port","27016",
-    "+sv_lan","1","+game_alias","competitive","+map","de_dust2","+exec","superpower1v5_smoketest.cfg" }) start.ArgumentList.Add(arg);
+    "+sv_lan","1","+game_alias",gameAlias,"+map","de_dust2" }) start.ArgumentList.Add(arg);
 using var process=new Process { StartInfo=start,EnableRaisingEvents=true };
 process.OutputDataReceived+=(_,e)=>Write(e.Data); process.ErrorDataReceived+=(_,e)=>Write(e.Data);
 process.Start(); process.BeginOutputReadLine(); process.BeginErrorReadLine();

@@ -21,7 +21,7 @@ public sealed class PowerContext(Plugin plugin,uint? ownerRaw=null)
     public RoundLoadout Loadout => Plugin.Powers.GetLoadout(Boss)!;
     public Managers.EffectsManager Effects => Plugin.Powers.GetEffects(Boss);
     public bool Contains(Power power) => Plugin.Powers.GetActive(Boss).Contains(power);
-    public IEnumerable<CCSPlayerController> Opponents => Plugin.Mode.Eligible().Where(p=>p.TeamNum!=Boss?.TeamNum);
+    public IEnumerable<CCSPlayerController> Opponents => Plugin.Mode.Eligible().Where(p=>Boss is { } owner && Plugin.Mode.Enemies(owner,p));
     public PowerSettings Settings(string id) => Plugin.Config.Powers[id];
     public void Tell(string text) { if (Players.Connected(Boss)) Boss!.PrintToChat(Plugin.Prefix + text); }
 }
@@ -30,6 +30,7 @@ public abstract class Power(string id)
     public string Id { get; } = id;
     public PowerDefinition Definition => PowerCatalog.Get(Id);
     public virtual bool IsActive => false;
+    public virtual int DefensePriority => 0;
     public virtual string? Status => null;
     protected PowerSettings Settings(PowerContext c) => c.Settings(Id);
     public virtual void Apply(PowerContext c) { }

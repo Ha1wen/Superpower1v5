@@ -46,10 +46,17 @@ public sealed partial class Plugin
             enemy.MovementServices!.Buttons.ButtonStates[0]|=(ulong)PlayerButtons.Attack;
         });
         AddTimer(12,()=> {
-            Powers.NativeProbePair("second_chance","infinite_ammo"); previous=Players.Copy(Players.AlivePawn(Mode.Boss)!.AbsOrigin!);
+            Powers.NativeProbePair("second_chance","teleport"); previous=Players.Copy(Players.AlivePawn(Mode.Boss)!.AbsOrigin!);
         },TimerFlags.STOP_ON_MAPCHANGE);
         AddTimer(15.3f,()=>Probe("Rifle-only bot scenario starts with a clear firing line",()=> {
             var boss=Players.AlivePawn(Mode.Boss)!; var shooter=Mode.Opponents.First(); var enemy=Players.AlivePawn(shooter)!;
+            var blinkOrigin=Players.Copy(boss.AbsOrigin!); var blinked=false;
+            for (var yaw=0;yaw<360 && !blinked;yaw+=30)
+            {
+                boss.EyeAngles.X=0; boss.EyeAngles.Y=yaw; Powers.Activate(1,Mode.Boss);
+                blinked=Players.Distance(blinkOrigin,boss.AbsOrigin!)>48;
+            }
+            Require(blinked,"Teleport activation did not move the Second Chance owner");
             var before=Players.Copy(boss.AbsOrigin!);
             boss.MoveType=MoveType_t.MOVETYPE_NONE; boss.ActualMoveType=MoveType_t.MOVETYPE_NONE;
             boss.Teleport(new(before.X,before.Y,before.Z+80),null,new Vector(0,0,0));
@@ -83,7 +90,7 @@ public sealed partial class Plugin
         }),TimerFlags.STOP_ON_MAPCHANGE);
         AddTimer(25,()=> {
             StopProbeBots(true);
-            Probe("Second Chance survives actual rifle bullets and keeps the round active",()=> {
+            Probe("Second Chance survives actual rifle bullets after Teleport and keeps the round active",()=> {
                 Require(consumedByBullet && Mode.Live && Players.AlivePawn(Mode.Boss) is not null && Config.Enabled,$"bullet protection failed: shots={fired}, consumed={Powers.Loadout?.Consumed.Contains("second_chance")}");
                 Require(previous is not null && Players.Distance(Players.AlivePawn(Mode.Boss)!.AbsOrigin!,previous)<40,"real shot did not rewind position");
             });

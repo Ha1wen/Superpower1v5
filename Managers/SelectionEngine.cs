@@ -19,6 +19,21 @@ public sealed class SelectionEngine(Random random)
             PowerCatalog.Compatible(kept, p)).ToList());
     }
 
+    public List<PowerDefinition> SelectDifferentPair(PluginConfig config,IReadOnlyList<PowerDefinition>? previous)
+    {
+        if (previous is null) return SelectPair(config);
+        var pool=PowerCatalog.All.Where(config.IsAvailable).ToArray();
+        var old=previous.Select(p=>p.Id).ToHashSet();
+        var pairs=new List<List<PowerDefinition>>();
+        for (var a=0;a<pool.Length;a++) for (var b=a+1;b<pool.Length;b++)
+            if (PowerCatalog.Compatible(pool[a],pool[b]) && !(old.Contains(pool[a].Id) && old.Contains(pool[b].Id)))
+                pairs.Add([pool[a],pool[b]]);
+        if (pairs.Count==0) return SelectPair(config); // A two-power configuration has only one pair.
+        var pair=pairs[random.Next(pairs.Count)];
+        if (random.Next(2)==1) pair.Reverse();
+        return pair;
+    }
+
     private PowerDefinition Pick(List<PowerDefinition> pool)
     {
         if (pool.Count == 0) throw new InvalidOperationException("Enable at least two different compatible powers.");

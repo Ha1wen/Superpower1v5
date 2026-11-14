@@ -15,18 +15,21 @@ public static class PowerCatalog
         new("teleport", "Teleport", "Activate to blink to the furthest safe floor toward your aim, up to the map trace limit.", PowerKind.Activated),
         new("explosive_bullets", "Explosive Bullets", "Bullet impacts cause powerful 55-damage blasts with line-of-sight falloff.", PowerKind.Triggered),
         new("infinite_ammo", "Infinite Ammo", "Your firearm magazine automatically refills.", PowerKind.Passive),
-        new("rapid_fire", "Rapid Fire", "Your firearm's server firing delay is shortened.", PowerKind.Triggered),
+        new("rapid_fire", "Rapid Fire", "Fire faster without recoil. Normal weapon spread still applies.", PowerKind.Triggered),
         new("low_gravity", "Low Gravity", "Fall more slowly with reduced personal gravity.", PowerKind.Passive),
         new("wall_vision", "Wall Vision", "Automatically see opponent outlines through walls, plus radar and bearings, while you have this power.", PowerKind.Passive),
         new("knockback", "Knockback", "Bullet hits launch opponents away from you.", PowerKind.Triggered),
-        new("second_chance", "Second Chance", "Once per round, survive a lethal hit and rewind your position and health by three seconds.", PowerKind.Triggered),
+        new("second_chance", "Second Chance", "Once per round (per life in deathmatch), survive a lethal hit and rewind position and health by three seconds.", PowerKind.Triggered),
         new("bhop", "Bhop", "Hold jump to automatically bunny hop while preserving momentum.", PowerKind.Passive),
         new("sandevistan", "Sandevistan", "Activate to freeze every opponent's movement and attacks for 10 seconds.", PowerKind.Activated),
-        new("pyromaniac", "Pyromaniac", "Bullet impacts ignite temporary molotov-style fire pools.", PowerKind.Triggered),
+        new("pyromaniac", "Pyromaniac", "Bullet impacts ignite real Molotov fire that spreads and can be extinguished by smoke.", PowerKind.Triggered),
         new("random_explosion", "Random Kill", "Instantly kill a random living player, including yourself. Cooldown: 20 seconds.", PowerKind.Activated),
         new("tiny", "Tiny", "Become half-sized, with a lower camera and smaller collision bounds.", PowerKind.Passive),
         new("juggernaut", "Juggernaut", "Start with 500 health while you have this power.", PowerKind.Passive),
-        new("cluster_grenade", "Cluster Grenade", "Each thrown utility splits into four projectiles of the same type.", PowerKind.Triggered)
+        new("cluster_grenade", "Cluster Grenade", "Each thrown utility splits into four projectiles of the same type.", PowerKind.Triggered),
+        new("infinite_jump", "Infinite Jump", "Press jump again in midair to jump as many times as you like.", PowerKind.Passive),
+        new("random_teleport", "Random Teleport", "Activate to teleport to a random safe place on the map. Cooldown: 20 seconds.", PowerKind.Activated),
+        new("forcefield", "Forcefield", "Activate to block all damage for 10 seconds. Cooldown: 35 seconds.", PowerKind.Activated)
     ];
 
     public static PowerDefinition Get(string id) => All.First(p => p.Id == id);

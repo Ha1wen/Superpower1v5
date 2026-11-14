@@ -13,6 +13,9 @@ public sealed class SecondChance() : Power("second_chance")
     private readonly RewindHistory _history=new();
     private uint? _pawn;
     private double _sampleAt,_protectedUntil;
+    private bool _pending;
+    public bool Recovering => _pending || CounterStrikeSharp.API.Server.CurrentTime<_protectedUntil;
+    public override int DefensePriority => 10;
     public int SnapshotCount => _history.Count;
 #if SERVER_SMOKE
     public RewindFrame? LastRestoredFrame { get; private set; }
@@ -32,7 +35,7 @@ public sealed class SecondChance() : Power("second_chance")
         if (!damage.BossVictim || c.Pawn is not { } pawn || damage.Info is not { } info) return false;
         if (c.Now<_protectedUntil) { Zero(info); return true; }
         if (Math.Ceiling(ExpectedHealthDamage(damage,pawn))<pawn.Health || !c.Loadout.Consumed.Add(Id)) return false;
-        Zero(info); _protectedUntil=c.Now+.4;
+        Zero(info); _protectedUntil=c.Now+.75;
         RewindFrame? frame=null; Vector? landing=null;
         foreach (var candidate in _history.Candidates(c.Now,Settings(c).Duration))
         { if (Landing(pawn,candidate) is { } clear) { frame=candidate; landing=clear; break; } }
@@ -43,12 +46,17 @@ public sealed class SecondChance() : Power("second_chance")
         if (frame is not null)
         {
             pawn.ArmorValue=Math.Clamp(frame.Armor,0,100);
-            pawn.Teleport(landing,new QAngle(frame.Angles.X,frame.Angles.Y,frame.Angles.Z),new Vector(frame.Velocity.X,frame.Velocity.Y,frame.Velocity.Z));
             var raw=pawn.EntityHandle.Raw; var destination=Players.Copy(landing!); var restored=frame;
-            // A weapon hit may still be inside lag compensation. Reapply after its rollback.
+            // Move only after the weapon damage/lag-compensation stack has unwound.
+            // A teleport inside that stack can be rolled back or invalidate the hit context.
+            _pending=true;
             c.Plugin.Defer(()=> {
                 if (c.Contains(this) && c.Pawn is { } alive && alive.EntityHandle.Raw==raw)
+                {
                     alive.Teleport(destination,new QAngle(restored.Angles.X,restored.Angles.Y,restored.Angles.Z),new Vector(restored.Velocity.X,restored.Velocity.Y,restored.Velocity.Z));
+                    _protectedUntil=c.Now+.75;
+                }
+                _pending=false;
             });
             Utilities.SetStateChanged(pawn,"CCSPlayerPawn","m_ArmorValue");
         }
@@ -62,8 +70,9 @@ public sealed class SecondChance() : Power("second_chance")
         var info=damage.Info!; var amount=Math.Max(info.Damage,info.TotalledDamage);
         // API 380's callback precedes CS2's hitbox/armor scaling. HitGroupId can
         // still be INVALID here; GetHitGroup reads the actual bullet trace.
-        if (!damage.Bullet || damage.Synthetic || info.HitGroupId!=HitGroup_t.HITGROUP_INVALID) return amount;
-        var group=info.GetHitGroup();
+        if (!damage.Bullet || damage.Synthetic) return amount;
+        var group=info.HitGroupId;
+        if (group is HitGroup_t.HITGROUP_INVALID or HitGroup_t.HITGROUP_GENERIC) group=info.GetHitGroup();
         if (group is HitGroup_t.HITGROUP_INVALID or HitGroup_t.HITGROUP_GENERIC) return amount;
         var weapon=Players.AlivePawn(damage.Attacker)?.WeaponServices?.ActiveWeapon.Value?.As<CCSWeaponBase>().VData;
         var part=group==HitGroup_t.HITGROUP_HEAD ? "head" : "body";
@@ -84,5 +93,5 @@ public sealed class SecondChance() : Power("second_chance")
         }
         return null;
     }
-    public override void Cleanup(PowerContext c) { _history.Clear(); _pawn=null; _protectedUntil=0; }
+    public override void Cleanup(PowerContext c) { _history.Clear(); _pawn=null; _protectedUntil=0; _pending=false; }
 }

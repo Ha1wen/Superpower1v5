@@ -22,20 +22,27 @@ public sealed class ModeController(Plugin plugin)
     public CsTeam OpponentTeam => CsTeam.CounterTerrorist;
     public CCSGameRules? Rules => Utilities.FindAllEntitiesByDesignerName<CCSGameRulesProxy>("cs_gamerules").FirstOrDefault()?.GameRules;
     public bool Warmup => Rules?.WarmupPeriod ?? true;
+    public static bool DeathmatchMode(string configured,int gameType,int gameMode) =>
+        configured.Equals("deathmatch",StringComparison.OrdinalIgnoreCase) || gameType==1 && gameMode==2;
+    public bool IsDeathmatch => DeathmatchMode(plugin.Config.GameMode,ConVar<int>.Find("game_type")?.Value ?? 0,ConVar<int>.Find("game_mode")?.Value ?? 0);
+    public bool FriendlyFireDeathmatch => ConVar<bool>.Find("mp_teammates_are_enemies")?.Value==true;
+    public bool Enemies(CCSPlayerController a,CCSPlayerController b) => a.EntityHandle.Raw!=b.EntityHandle.Raw && (a.TeamNum!=b.TeamNum || IsDeathmatch && FriendlyFireDeathmatch);
     public bool CanUsePowers => CanUsePlayerPowers(Boss);
-    public bool CanUsePlayerPowers(CCSPlayerController? player) => plugin.Config.Enabled && Live && (!Warmup || plugin.Config.EnableDuringWarmup) && Rules?.FreezePeriod==false && Players.Playing(player) && plugin.Powers.HasPowers(player) && Players.AlivePawn(player) is not null;
+    public bool CanUsePlayerPowers(CCSPlayerController? player) => plugin.Config.Enabled && Live && (!Warmup || plugin.Config.EnableDuringWarmup) && (IsDeathmatch || Rules?.FreezePeriod==false) && Players.Playing(player) && plugin.Powers.HasPowers(player) && Players.AlivePawn(player) is not null;
     public IEnumerable<CCSPlayerController> Opponents => Eligible().Where(p=>p.Team==OpponentTeam && !IsBoss(p));
     public bool IsBoss(CCSPlayerController? p) => Players.Connected(p) && p!.EntityHandle.Raw==_bossRaw;
     public List<CCSPlayerController> Eligible() => Utilities.GetPlayers().Where(p=>Players.Playing(p) && (!p.IsBot || plugin.Config.AllowBots)).OrderBy(p=>p.IsBot).ThenBy(p=>p.Slot).ToList();
-    private bool Ready() => Eligible().Count>=2 && (plugin.Config.RotateSuperpoweredPlayer || Eligible().Any(p=>p.Team==BossTeam));
+    private bool Ready() => IsDeathmatch ? Eligible().Count>0 : Eligible().Count>=2 && (plugin.Config.RotateSuperpoweredPlayer || Eligible().Any(p=>p.Team==BossTeam));
     public bool CanJoinT(CCSPlayerController player)
     {
+        if (IsDeathmatch) return true;
         var incumbent=Eligible().FirstOrDefault(p=>p.Team==BossTeam && p.EntityHandle.Raw!=player.EntityHandle.Raw);
         return incumbent is null || incumbent.IsBot && !player.IsBot;
     }
     public void EnforceCvars()
     {
         if (!plugin.Config.Enabled) return;
+        if (IsDeathmatch) { RestoreCvars(); return; }
         foreach (var (name,value) in new[] { ("mp_autoteambalance","false"),("mp_limitteams","0"),("mp_autokick","false"),("mp_halftime","false") })
         {
             var c=ConVar<int>.Find(name); if (c is null) continue;
@@ -52,6 +59,14 @@ public sealed class ModeController(Plugin plugin)
         ResetRound(); EnforceCvars(); _waitingForPlayers=true;
         if (!plugin.Config.Enabled || Warmup && !plugin.Config.EnableDuringWarmup) return;
         var players=Eligible();
+        if (IsDeathmatch)
+        {
+            _bossRaw=null; _requestedBoss=null;
+            if (players.Count==0) return;
+            foreach (var player in players) plugin.Powers.Roll(true,player);
+            _prepared=true; _waitingForPlayers=false;
+            return;
+        }
         var previous=Boss is { } old ? Players.Key(old) : null;
         var requested=_requestedBoss is { } requestedRaw ? players.FirstOrDefault(p=>p.EntityHandle.Raw==requestedRaw) : null;
         var roster=RosterPlanner.Plan(players.Select(p=>new Candidate(Players.Key(p),p.IsBot,p.TeamNum)).ToArray(),plugin.Config.AllowBots,plugin.Config.MaxOpponents,previous,plugin.Config.RotateSuperpoweredPlayer && requested is null);
@@ -90,6 +105,15 @@ public sealed class ModeController(Plugin plugin)
     public void Spawn(CCSPlayerController p)
     {
         if (!plugin.Config.Enabled || !Players.Playing(p)) return;
+        if (IsDeathmatch)
+        {
+            if (Warmup && !plugin.Config.EnableDuringWarmup) return;
+            if (!Live) StartRound();
+            if (!Live) return;
+            plugin.Powers.Roll(true,p,differentPair:true);
+            ResetHealth(p); plugin.Powers.ApplyToPawn(p); plugin.Feedback.Loadout(p);
+            return;
+        }
         if (Live && plugin.Config.EveryoneHasPowers && !plugin.Powers.HasPowers(p)) { plugin.Powers.Roll(true,p); plugin.Feedback.Loadout(p); }
         ResetHealth(p); plugin.Powers.ApplyToPawn(p);
     }
@@ -97,7 +121,7 @@ public sealed class ModeController(Plugin plugin)
     {
         if (Live)
         {
-            plugin.Broadcast(winner==(int)BossTeam ? "THE T BOSS WINS THE ROUND!" : winner==(int)OpponentTeam ? "THE CT PLAYERS WIN THE ROUND!" : "Round ended in a draw.");
+            if (!IsDeathmatch) plugin.Broadcast(winner==(int)BossTeam ? "THE T BOSS WINS THE ROUND!" : winner==(int)OpponentTeam ? "THE CT PLAYERS WIN THE ROUND!" : "Round ended in a draw.");
             plugin.Feedback.RevealRound();
         }
         ResetRound();
@@ -106,6 +130,7 @@ public sealed class ModeController(Plugin plugin)
     public void MapEnd() { ResetRound(); _bossRaw=null; _requestedBoss=null; _restartQueued=false; _waitingForPlayers=true; }
     public void RequestBoss(CCSPlayerController p)
     {
+        if (IsDeathmatch) throw new InvalidOperationException("Deathmatch gives every player powers; it has no T boss.");
         if (!Players.Playing(p) || p.IsBot && !plugin.Config.AllowBots) throw new InvalidOperationException("Select an eligible player.");
         _changing=true;
         try { foreach (var other in Eligible().Where(other=>other.Team==BossTeam && other.EntityHandle.Raw!=p.EntityHandle.Raw)) Move(other,OpponentTeam); Move(p,BossTeam); }
@@ -123,6 +148,7 @@ public sealed class ModeController(Plugin plugin)
     {
         if (_changing || !plugin.Config.Enabled || !Players.Connected(p)) return;
         if (team is not (2 or 3)) plugin.Powers.Stop(p);
+        if (IsDeathmatch) return;
         if (IsBoss(p) && team!=(int)BossTeam) BossLeft();
         if (team==2)
         {
@@ -143,6 +169,11 @@ public sealed class ModeController(Plugin plugin)
     public void Maintenance()
     {
         if (!plugin.Config.Enabled) return;
+        if (IsDeathmatch)
+        {
+            if (!Live && (!Warmup || plugin.Config.EnableDuringWarmup) && Ready()) StartRound();
+            return;
+        }
         if (Live && (!Players.Playing(Boss) || Boss!.Team!=BossTeam)) BossLeft();
         if (Live) plugin.Powers.ReconcileEveryone();
         if (_waitingForPlayers && !Live && !_prepared && !Warmup && Ready()) QueueRestart();

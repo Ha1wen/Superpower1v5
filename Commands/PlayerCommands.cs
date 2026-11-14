@@ -44,7 +44,9 @@ public sealed partial class Plugin
     [ConsoleCommand("css_help","Superpower 1v5 instructions")]
     public void HelpCommand(CCSPlayerController? p,CommandInfo cmd)
     {
-        cmd.ReplyToCommand(Prefix+"The T player is the boss. Powered players receive TWO random powers, revealed at round end. Join CT to oppose the boss. Juggernaut gives 500 HP.");
+        cmd.ReplyToCommand(Prefix+(Mode.IsDeathmatch
+            ? "Deathmatch: every active player receives two powers. Dying gives you a new pair on respawn with fresh cooldowns."
+            : "The T player is the boss. Powered players receive TWO random powers, revealed at round end. Join CT to oppose the boss. Juggernaut gives 500 HP."));
         cmd.ReplyToCommand(Prefix+"!power | !powers | !ability1 | !ability2 | !cooldowns. Console binds: bind v css_ability1; bind b css_ability2");
     }
 }

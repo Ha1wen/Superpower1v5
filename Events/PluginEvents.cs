@@ -40,13 +40,18 @@ public sealed partial class Plugin
         RegisterEventHandler<EventItemPickup>((e,i)=> { Guard(()=> { if (!e.Silent && e.Userid is { } p) Powers.Noise(p); }); return HookResult.Continue; });
         RegisterEventHandler<EventWeaponZoom>((e,i)=> { Guard(()=> { if (e.Userid is { } p) Powers.Noise(p); }); return HookResult.Continue; });
         RegisterEventHandler<EventBombBeginplant>((e,i)=> { Guard(()=> { if (e.Userid is { } p) Powers.Noise(p); }); return HookResult.Continue; });
+        RegisterEventHandler<EventBombPlanted>((e,i)=> { Guard(()=> { if (e.Userid is { } p) Powers.Noise(p); }); return HookResult.Continue; });
         RegisterEventHandler<EventBombBegindefuse>((e,i)=> { Guard(()=> { if (e.Userid is { } p) Powers.Noise(p); }); return HookResult.Continue; });
         RegisterEventHandler<EventSmokegrenadeDetonate>((e,i)=> { Guard(()=>Powers.Smoke(e.X,e.Y,e.Z)); return HookResult.Continue; });
+        RegisterEventHandler<EventInfernoStartburn>((e,i)=> { Guard(()=> {
+            if (Utilities.GetEntityFromIndex<CInferno>(e.Entityid) is { IsValid:true } inferno) Powers.Inferno(inferno);
+        }); return HookResult.Continue; });
         RegisterEventHandler<EventPlayerHurt>((e,i)=> { Guard(()=>PlayerHurt(e)); return HookResult.Continue; });
         RegisterEventHandler<EventPlayerDeath>((e,i)=> {
             Guard(()=> {
                 if (!Mode.Live) return;
                 Powers.Stop(e.Userid);
+                if (Mode.IsDeathmatch) return;
                 if (Mode.IsBoss(e.Userid)) Broadcast("The superpowered player has been eliminated!");
                 else if (!Mode.Opponents.Any(p=>Players.AlivePawn(p) is not null)) Broadcast("All opponents have been eliminated!");
             });
@@ -59,7 +64,7 @@ public sealed partial class Plugin
         if (Damage.SourcePawn is { } source) info.Attacker.Raw=source;
         var attacker=Players.Controller(info.Attacker.Value);
         var bossVictim=Powers.HasPowers(victim);
-        var bossAttacker=Powers.HasPowers(attacker) && attacker!.TeamNum!=victim!.TeamNum;
+        var bossAttacker=Powers.HasPowers(attacker) && Mode.Enemies(attacker!,victim!);
         return bossVictim || bossAttacker ? new(victim!,attacker,info,bossVictim,bossAttacker,Damage.Synthetic) : null;
     }
     private HookResult BeforeDamage(CCSPlayerPawn p,CTakeDamageInfo info)
@@ -78,7 +83,7 @@ public sealed partial class Plugin
         // for primary hits, so the same hit is never also processed by the native post hook.
         if (!Mode.Live || Damage.Synthetic || hurt.DmgHealth<=0 || !Players.Playing(hurt.Userid)) return;
         var victim=hurt.Userid!; var attacker=hurt.Attacker;
-        var bossVictim=Powers.HasPowers(victim); var bossAttacker=Powers.HasPowers(attacker) && attacker!.TeamNum!=victim.TeamNum;
+        var bossVictim=Powers.HasPowers(victim); var bossAttacker=Powers.HasPowers(attacker) && Mode.Enemies(attacker!,victim);
         if (!bossVictim && !bossAttacker) return;
         var healthBefore=100;
         var type=FirearmNames.Contains(hurt.Weapon.Replace("weapon_","",StringComparison.OrdinalIgnoreCase)) ? DamageTypes_t.DMG_BULLET : DamageTypes_t.DMG_GENERIC;

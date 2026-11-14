@@ -24,16 +24,17 @@ public sealed class DamageService(Plugin plugin)
     }
     public void Deal(uint targetRaw,uint sourceRaw,float amount,DamageTypes_t type=DamageTypes_t.DMG_GENERIC) => ApplyDamage(targetRaw,sourceRaw,amount,type,true);
 #if SERVER_SMOKE
-    public void NativeProbeHit(uint target,uint source,float amount,DamageTypes_t type=DamageTypes_t.DMG_BULLET) => ApplyDamage(target,source,amount,type,false);
+    public void NativeProbeHit(uint target,uint source,float amount,DamageTypes_t type=DamageTypes_t.DMG_BULLET,HitGroup_t group=HitGroup_t.HITGROUP_INVALID)
+        => ApplyDamage(target,source,amount,type,false,group);
 #endif
-    private unsafe void ApplyDamage(uint targetRaw,uint sourceRaw,float amount,DamageTypes_t type,bool secondary)
+    private unsafe void ApplyDamage(uint targetRaw,uint sourceRaw,float amount,DamageTypes_t type,bool secondary,HitGroup_t group=HitGroup_t.HITGROUP_INVALID)
     {
         if (!plugin.Mode.Live || _applying || !float.IsFinite(amount) || amount<=0) return;
         var target=Players.Resolve(targetRaw); var source=Players.Resolve(sourceRaw);
-        if (Players.AlivePawn(target) is not { } victim || source?.PlayerPawn.Value is not { IsValid:true } attacker || target!.TeamNum==source.TeamNum) return;
-        ApplyEngineDamage(victim,source,attacker,amount,type,secondary);
+        if (Players.AlivePawn(target) is not { } victim || source?.PlayerPawn.Value is not { IsValid:true } attacker || !plugin.Mode.Enemies(target!,source)) return;
+        ApplyEngineDamage(victim,source,attacker,amount,type,secondary,group);
     }
-    private unsafe void ApplyEngineDamage(CBaseEntity victim,CCSPlayerController source,CCSPlayerPawn attacker,float amount,DamageTypes_t type,bool secondary)
+    private unsafe void ApplyEngineDamage(CBaseEntity victim,CCSPlayerController source,CCSPlayerPawn attacker,float amount,DamageTypes_t type,bool secondary,HitGroup_t group)
     {
         var infoSize=Schema.GetClassSize("CTakeDamageInfo"); var resultSize=Schema.GetClassSize("CTakeDamageResult");
         if (infoSize<0x88+sizeof(AttackerInfo) || infoSize>4096 || resultSize<16 || resultSize>4096)
@@ -46,6 +47,7 @@ public sealed class DamageService(Plugin plugin)
             *(AttackerInfo*)((byte*)infoMemory+0x88)=new() { NeedInit=1,IsPawn=1,Pawn=attacker.EntityHandle.Raw,Slot=source.Slot,Team=source.TeamNum };
             info.Attacker.Raw=attacker.EntityHandle.Raw; info.Inflictor.Raw=attacker.EntityHandle.Raw; info.Ability.Raw=uint.MaxValue;
             info.Damage=amount; info.OriginalDamage=amount; info.BitsDamageType=type;
+            info.HitGroupId=group;
             Schema.SetSchemaValue(result.Handle,"CTakeDamageResult","m_pOriginatingInfo",info.Handle);
             result.HealthBefore=victim.Health; result.HealthLost=(int)amount; result.DamageDealt=amount;
             result.PreModifiedDamage=amount; result.TotalledHealthLost=(int)amount; result.TotalledDamageDealt=amount;

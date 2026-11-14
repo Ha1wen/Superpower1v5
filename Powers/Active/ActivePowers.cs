@@ -12,6 +12,7 @@ public sealed class Invisibility() : Power("invisibility")
     private byte _alpha=255;
     private bool _grounded;
     public override bool IsActive => _active;
+    public bool Concealed => _active && _alpha==0;
     public override string? Status => _alpha==0 ? "hidden" : _alpha==255 ? "visible (sound)" : "fading";
     public static bool QuietMovement(CCSPlayerController player,CCSPlayerPawn pawn) =>
         pawn.IsWalking || (pawn.Flags&2)!=0 || (player.Buttons&(PlayerButtons.Speed|PlayerButtons.Walk|PlayerButtons.Duck))!=0;
@@ -32,7 +33,9 @@ public sealed class Invisibility() : Power("invisibility")
         if (weapon?.InReload==true || pawn.IsDefusing || planting || grounded && !_grounded ||
             grounded && speed>140 && !QuietMovement(player,pawn)) Noise(c);
         _grounded=grounded;
+        if (Concealed) Managers.EffectsManager.SuppressRadar(pawn);
     }
+    public override void PostThink(PowerContext c) { if (Concealed && c.Pawn is { } pawn) Managers.EffectsManager.SuppressRadar(pawn); }
     public override void SlowTick(PowerContext c)
     {
         if (!_active || c.Pawn is not { } p || c.Boss is not { } player) { Cleanup(c); return; }
@@ -54,7 +57,8 @@ public sealed class Invisibility() : Power("invisibility")
             c.Effects.Fade(model,_alpha); colors.Add(entity.EntityHandle.Raw);
         }
         c.Effects.RestoreColorsExcept(colors);
-        if (_alpha==0) c.Effects.Conceal(p,player,attached); else c.Effects.ClearConcealment();
+        if (_alpha==0) { c.Effects.Conceal(p,player,attached); Managers.EffectsManager.SuppressRadar(p); }
+        else c.Effects.ClearConcealment();
     }
     public override void Cleanup(PowerContext c)
     { _active=false; _alpha=255; c.Effects.ClearConcealment(); c.Effects.RestoreColorsExcept(new HashSet<uint>()); }
@@ -63,6 +67,7 @@ public sealed class Teleport() : Power("teleport")
 {
     public override bool Activate(PowerContext c)
     {
+        if (c.Plugin.Powers.IsRecovering(c.Boss)) { c.Tell("Wait for Second Chance to finish rewinding."); return false; }
         if (c.Pawn is { } p && SafeTeleport.TryBlink(p,Settings(c).Distance)) return true;
         c.Tell("No safe destination in that direction. Cooldown was not spent."); return false;
     }
@@ -84,6 +89,7 @@ public sealed class WallVision() : Power("wall_vision")
         var living = new HashSet<uint>();
         foreach (var enemy in c.Opponents)
         {
+            if (c.Plugin.Powers.IsConcealed(enemy)) continue;
             if (Players.AlivePawn(enemy) is not { } p || p.AbsOrigin is not { } pos) continue;
             living.Add(p.EntityHandle.Raw);
             c.Effects.Reveal(p,boss);

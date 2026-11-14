@@ -92,7 +92,7 @@ public sealed partial class Plugin
     [ConsoleCommand("css_sp_debug","Print mode diagnostics"),RequiresPermissions("@css/generic")]
     public void DebugCommand(CCSPlayerController? p,CommandInfo cmd)
     {
-        cmd.ReplyToCommand($"Superpower1v5 {ModuleVersion}; Enabled={Config.Enabled}; Live={Mode.Live}; Warmup={Mode.Warmup}; Generation={Mode.Generation}; RandomBoss={Config.RotateSuperpoweredPlayer}; PublicPowers={Config.PublicPowerAnnouncements}; Everyone={Config.EveryoneHasPowers}");
+        cmd.ReplyToCommand($"Superpower1v5 {ModuleVersion}; Mode={(Mode.IsDeathmatch ? "deathmatch" : "1v5")}; Enabled={Config.Enabled}; Live={Mode.Live}; Warmup={Mode.Warmup}; Generation={Mode.Generation}; RandomBoss={Config.RotateSuperpoweredPlayer}; PublicPowers={Config.PublicPowerAnnouncements}; Everyone={Config.EveryoneHasPowers}");
         var visible= p is null || Mode.IsBoss(p) || Config.PublicPowerAnnouncements;
         cmd.ReplyToCommand($"Boss={Mode.Boss?.PlayerName??"none"}; Eligible={Mode.Eligible().Count}; Opponents={Mode.Opponents.Count()}; Powers={(visible ? string.Join(',',Powers.Loadout?.Powers.Select(x=>x.Id)??[]) : "private")}");
         foreach (var player in Utilities.GetPlayers().Where(Players.Playing))

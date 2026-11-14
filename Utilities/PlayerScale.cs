@@ -28,19 +28,26 @@ public sealed class PlayerScale
         if (!_states.TryGetValue(pawn.EntityHandle.Raw,out var old)) _states[pawn.EntityHandle.Raw]=old=new(pawn);
         if (node.Scale!=old.Scale*factor)
         {
-            node.Scale=old.Scale*factor; node.AbsScale=old.Absolute*factor; node.ClientLocalScale=old.Local*factor;
+            node.Scale=old.Scale*factor; node.AbsScale=old.Absolute*factor;
+            // ClientLocalScale multiplies the replicated model scale again on the client.
+            // Scaling both makes the client's camera disagree with the server's firing origin.
+            node.ClientLocalScale=old.Local;
             DirtyBody(pawn);
         }
-        var crouched=pawn.MovementServices?.As<CCSPlayer_MovementServices>().Ducked==true;
+        var movement=pawn.MovementServices?.As<CCSPlayer_MovementServices>();
+        var crouched=movement?.Ducked==true;
         var height=crouched ? Math.Min(old.Maxs.Z,54) : old.Maxs.Z;
         Set(pawn.Collision.Mins,old.Mins.X*factor,old.Mins.Y*factor,old.Mins.Z*factor);
         Set(pawn.Collision.Maxs,old.Maxs.X*factor,old.Maxs.Y*factor,height*factor);
         Set(pawn.Collision.CapsuleCenter1,old.Capsule1.X*factor,old.Capsule1.Y*factor,old.Capsule1.Z*factor);
         Set(pawn.Collision.CapsuleCenter2,old.Capsule2.X*factor,old.Capsule2.Y*factor,old.Capsule2.Z*factor);
         pawn.Collision.CapsuleRadius=old.CapsuleRadius*factor;
-        pawn.ViewOffset.Z=(crouched ? Math.Min(old.ViewHeight,46) : old.ViewHeight)*factor;
+        pawn.ViewOffset.Z=EyeHeight(old.ViewHeight,movement?.DuckAmount ?? (crouched ? 1 : 0),factor);
+        if (pawn.CameraServices is { } camera) camera.OldPlayerViewOffsetZ=pawn.ViewOffset.Z;
         Utilities.SetStateChanged(pawn,"CBaseModelEntity","m_vecViewOffset");
     }
+    public static float EyeHeight(float standing,float duckAmount,float factor) =>
+        (standing+(Math.Min(standing,46)-standing)*Math.Clamp(duckAmount,0,1))*factor;
     public static void DirtyBody(CCSPlayerPawn pawn)
     {
         // Scale is a scene-node field: dirty the owning body component, not pawn + node offset.

@@ -16,7 +16,7 @@ public sealed class EffectsManager
     }
     private sealed record Outline(uint Target, uint Viewer, uint Relay, uint Glow, uint RelayIndex, uint GlowIndex);
     private readonly Dictionary<(uint pawn, bool gravity), Scalar> _scalars = new();
-    private readonly Dictionary<uint, (Color color, RenderMode_t mode)> _colors = new();
+    private readonly Dictionary<uint, (Color color, RenderMode_t mode,float shadow)> _colors = new();
     private readonly Dictionary<uint, (int word, uint bit, bool hadBit, bool spotted)> _radar = new();
     private sealed class RadarBaseline(bool spotted)
     { public bool Spotted { get; }=spotted; public HashSet<EffectsManager> Owners { get; }=[]; }
@@ -30,23 +30,24 @@ public sealed class EffectsManager
     public bool HiddenFrom(uint viewer,uint entityIndex) => Volatile.Read(ref _concealed) is { } hidden && hidden.Viewer!=viewer && Array.IndexOf(hidden.Indices,entityIndex)>=0;
     public IReadOnlyList<CEntityInstance> AttachedEntities(CCSPlayerPawn pawn)
     {
-        var owned=new Dictionary<uint,uint> { [pawn.EntityHandle.Raw]=pawn.Index };
-        var entities=Utilities.GetAllEntities().Where(e=>e.IsValid).ToArray();
-        // Follow ownership and parenting through equipment and weapon world models.
-        for (var pass=0;pass<16;pass++)
+        // Only actual model classes may be faded. Ownership alone does not mean attachment:
+        // a planted bomb, grenade or world entity can retain the planter/thrower as its owner.
+        var models=new Dictionary<uint,CEntityInstance> { [pawn.EntityHandle.Raw]=pawn };
+        if (pawn.WeaponServices is { } weapons)
+            foreach (var handle in weapons.MyWeapons)
+                if (handle.Value is { IsValid:true } weapon && weapon.OwnerEntity.Raw==pawn.EntityHandle.Raw)
+                    models[weapon.EntityHandle.Raw]=weapon;
+        var props=Utilities.FindAllEntitiesByDesignerName<CDynamicProp>("prop_dynamic").ToArray();
+        for (var pass=0;pass<2;pass++)
         {
-            var added=false;
-            foreach (var entity in entities)
+            foreach (var prop in props)
             {
-                if (!entity.IsValid || owned.ContainsKey(entity.EntityHandle.Raw) || entity.DesignerName.EndsWith("_projectile",StringComparison.Ordinal) || entity.DesignerName=="inferno") continue;
-                var model=entity.As<CBaseEntity>();
-                var parent=model.CBodyComponent?.SceneNode?.PParent?.Owner;
-                if (!owned.ContainsKey(model.OwnerEntity.Raw) && (parent is null || !owned.ContainsKey(parent.EntityHandle.Raw))) continue;
-                owned[entity.EntityHandle.Raw]=entity.Index; added=true;
+                if (!prop.IsValid || models.ContainsKey(prop.EntityHandle.Raw)) continue;
+                var parent=prop.CBodyComponent?.SceneNode?.PParent?.Owner;
+                if (parent is { IsValid:true } && models.ContainsKey(parent.EntityHandle.Raw)) models[prop.EntityHandle.Raw]=prop;
             }
-            if (!added) break;
         }
-        return entities.Where(e=>e.IsValid && owned.ContainsKey(e.EntityHandle.Raw)).ToArray();
+        return models.Values.ToArray();
     }
     public void Conceal(CCSPlayerPawn pawn,CCSPlayerController viewer,IReadOnlyList<CEntityInstance>? attached=null) =>
         Volatile.Write(ref _concealed,new(viewer.EntityHandle.Raw,(attached ?? AttachedEntities(pawn)).Select(e=>e.Index).Append(pawn.Index).Distinct().ToArray()));
@@ -90,11 +91,14 @@ public sealed class EffectsManager
     public void Fade(CBaseModelEntity entity, byte alpha)
     {
         if (!entity.IsValid) return;
-        _colors.TryAdd(entity.EntityHandle.Raw, (entity.Render, entity.RenderMode));
+        _colors.TryAdd(entity.EntityHandle.Raw, (entity.Render, entity.RenderMode,entity.ShadowStrength));
+        if (entity.Render.A==alpha && entity.RenderMode==RenderMode_t.kRenderTransAlpha) return;
         entity.RenderMode = RenderMode_t.kRenderTransAlpha;
         entity.Render = Color.FromArgb(alpha, entity.Render.R, entity.Render.G, entity.Render.B);
+        entity.ShadowStrength=alpha/255f*_colors[entity.EntityHandle.Raw].shadow;
         Utilities.SetStateChanged(entity, "CBaseModelEntity", "m_clrRender");
         Utilities.SetStateChanged(entity, "CBaseModelEntity", "m_nRenderMode");
+        Utilities.SetStateChanged(entity, "CBaseModelEntity", "m_flShadowStrength");
     }
     public void RestoreColorsExcept(ISet<uint> keep)
     {
@@ -104,9 +108,10 @@ public sealed class EffectsManager
             var entity = Players.Entity<CBaseModelEntity>(raw);
             if (entity is { IsValid: true })
             {
-                entity.Render = old.color; entity.RenderMode = old.mode;
+                entity.Render = old.color; entity.RenderMode = old.mode; entity.ShadowStrength=old.shadow;
                 Utilities.SetStateChanged(entity, "CBaseModelEntity", "m_clrRender");
                 Utilities.SetStateChanged(entity, "CBaseModelEntity", "m_nRenderMode");
+                Utilities.SetStateChanged(entity, "CBaseModelEntity", "m_flShadowStrength");
             }
             _colors.Remove(raw);
         }
@@ -185,7 +190,7 @@ public sealed class EffectsManager
     }
     // CheckTransmit may run on networking workers. Only read an immutable index snapshot here.
     public void FilterTransmission(CCheckTransmitInfoList clients)
-    { FilterOutlines(clients); FilterConcealed(clients); }
+    { FilterOutlines(clients); }
     public void FilterOutlines(CCheckTransmitInfoList clients)
     {
         var outlines = Volatile.Read(ref _transmitOutlines);
@@ -200,12 +205,18 @@ public sealed class EffectsManager
             }
         }
     }
-    public void FilterConcealed(CCheckTransmitInfoList clients)
+    // Invisibility uses model alpha rather than removing a live pawn/equipment from PVS.
+    // Removing entities referenced by a client controller/viewmodel can crash the client.
+    // The concealment snapshot above is diagnostic only; it never filters transmission.
+    public static void SuppressRadar(CCSPlayerPawn pawn)
     {
-        if (Volatile.Read(ref _concealed) is not { } hidden) return;
-        foreach (var (info,viewer) in clients)
-            if (viewer?.EntityHandle.Raw!=hidden.Viewer)
-                foreach (var index in hidden.Indices) info.TransmitEntities.Remove(index);
+        var state=pawn.EntitySpottedState;
+        var spotted=state.Spotted;
+        for (var i=0;i<state.SpottedByMask.Length;i++) spotted|=state.SpottedByMask[i]!=0;
+        if (!spotted) return;
+        state.Spotted=false;
+        for (var i=0;i<state.SpottedByMask.Length;i++) state.SpottedByMask[i]=0;
+        Utilities.SetStateChanged(pawn,"CCSPlayerPawn","m_entitySpottedState");
     }
     public void PruneOutlines(ISet<uint> living)
     { foreach (var target in _outlines.Keys.Where(raw => !living.Contains(raw)).ToArray()) RemoveOutline(target); }

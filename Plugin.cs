@@ -13,7 +13,7 @@ namespace Superpower1v5;
 public sealed partial class Plugin : BasePlugin,IPluginConfig<PluginConfig>
 {
     public override string ModuleName => "Superpower 1v5";
-    public override string ModuleVersion => "1.7.0";
+    public override string ModuleVersion => "1.8.0";
     public override string ModuleAuthor => "Superpower1v5";
     public override string ModuleDescription => "The chosen T player has two private powers against up to five CT opponents.";
     public const string Prefix = " \x04[SUPERPOWER]\x01 ";
@@ -26,6 +26,8 @@ public sealed partial class Plugin : BasePlugin,IPluginConfig<PluginConfig>
     private bool _unloaded;
     private double _slowAt, _maintenanceAt;
     private readonly HashSet<uint> _entities=[];
+    private readonly HashSet<uint> _noCluster=[];
+    public void SuppressCluster(uint raw) => _noCluster.Add(raw);
 
     public void OnConfigParsed(PluginConfig config) { config.Validate(); Config=config; }
     public override void Load(bool hotReload)
@@ -61,7 +63,7 @@ public sealed partial class Plugin : BasePlugin,IPluginConfig<PluginConfig>
         RegisterListener<Listeners.OnEntitySpawned>(entity=> {
             if (entity is not { IsValid:true } || !GrenadeFactory.Supported(entity.DesignerName)) return;
             var raw=entity.EntityHandle.Raw;
-            Defer(()=> { if (Players.Entity<CBaseCSGrenadeProjectile>(raw) is { IsValid:true } projectile) Powers.Projectile(projectile); });
+            Defer(()=> { if (!_noCluster.Contains(raw) && Players.Entity<CBaseCSGrenadeProjectile>(raw) is { IsValid:true } projectile) Powers.Projectile(projectile); });
         });
         RegisterListener<Listeners.OnPlayerTakeDamagePost>((p,info,result)=>Guard(()=>AfterDamage(p,info,result)));
         RegisterListener<Listeners.CheckTransmit>(info=>Powers.FilterTransmission(info));
@@ -102,10 +104,11 @@ public sealed partial class Plugin : BasePlugin,IPluginConfig<PluginConfig>
     public int TrackedEntityCount => _entities.Count;
     public void RemoveTrackedEntity(uint raw)
     {
+        _noCluster.Remove(raw);
         if (!_entities.Remove(raw)) return;
         var entity=new CEntityInstance(raw); if (entity.IsValid) entity.Remove();
     }
-    public void ClearEntities() { foreach (var raw in _entities.ToArray()) RemoveTrackedEntity(raw); }
+    public void ClearEntities() { foreach (var raw in _entities.ToArray()) RemoveTrackedEntity(raw); _noCluster.Clear(); }
     public override void Unload(bool hotReload)
     {
         Mode.ResetRound(); ClearEntities(); Mode.RestoreCvars(); _unloaded=true;

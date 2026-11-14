@@ -40,20 +40,21 @@ public sealed partial class Plugin
             _realShotWaiting=false; _realShotSaved=true; StopProbeBots(true);
             Probe("Second Chance intercepts an actual bot weapon hit",()=>Require(Players.AlivePawn(Mode.Boss) is { Health:>0 },"boss died to real weapon damage"));
         });
-        AddTimer(12,()=>Probe("One T boss and five CT players; all 18 powers apply",()=> {
+        AddTimer(12,()=>Probe("One T boss and five CT players; all 21 powers apply",()=> {
             Require(Mode.Live && Mode.Boss?.TeamNum==2 && Mode.Opponents.Count()==5,"roster");
             _fixedBoss=Players.Key(Mode.Boss!);
             foreach (var definition in Models.PowerCatalog.All)
             { Powers.NativeProbePair(definition.Id,definition.Id=="infinite_ammo" ? "teleport" : "infinite_ammo"); Powers.Tick(); Powers.SlowTick(); }
             Powers.NativeProbePair("invisibility","infinite_ammo");
-            AddTimer(.35f,()=>Probe("Quiet invisibility conceals body and refreshed equipment for opponents only",()=> {
+            AddTimer(.35f,()=>Probe("Quiet invisibility fades body and directly parented equipment",()=> {
             var boss=Mode.Boss!; var pawn=Players.AlivePawn(boss)!; var opponent=Mode.Opponents.First();
-            Require(Effects.HiddenFrom(opponent.EntityHandle.Raw,pawn.Index) && !Effects.HiddenFrom(boss.EntityHandle.Raw,pawn.Index),"body recipient filtering");
+            Require(pawn.Render.A==0 && pawn.ShadowStrength==0,"body/shadow render concealment");
             Require(Effects.HiddenEntityCount>=2,"owned weapon missing from concealment");
             var attachment=Utilities.CreateEntityByName<CDynamicProp>("prop_dynamic")!;
             attachment.SetModel(pawn.CBodyComponent!.SceneNode!.GetSkeletonInstance().ModelState.ModelName); attachment.DispatchSpawn(); attachment.OwnerEntity.Raw=pawn.EntityHandle.Raw;
+            attachment.AcceptInput("FollowEntity",pawn,attachment,"!activator");
             Powers.SlowTick(); Require(Effects.HiddenFrom(opponent.EntityHandle.Raw,attachment.Index),"equipment visible");
-            attachment.OwnerEntity.Raw=uint.MaxValue; Powers.SlowTick(); Require(!Effects.HiddenFrom(opponent.EntityHandle.Raw,attachment.Index),"detached item remains hidden"); attachment.Remove();
+            attachment.AcceptInput("ClearParent"); Powers.SlowTick(); Require(!Effects.HiddenFrom(opponent.EntityHandle.Raw,attachment.Index) && attachment.Render.A==255,"detached item remains hidden"); attachment.Remove();
             Powers.NativeProbePair("teleport","infinite_ammo"); Require(Effects.HiddenEntityCount==0,"concealment leaked");
             }),TimerFlags.STOP_ON_MAPCHANGE);
         }),TimerFlags.STOP_ON_MAPCHANGE);
@@ -75,7 +76,8 @@ public sealed partial class Plugin
             pawn.Teleport(new Vector(start.X,start.Y,start.Z+80),null,new Vector(0,0,0)); pawn.Health=20;
             Damage.NativeProbeHit(boss.EntityHandle.Raw,Mode.Opponents.First().EntityHandle.Raw,500,DamageTypes_t.DMG_BULLET);
             Require(Players.AlivePawn(boss)?.Health==100 && Powers.Loadout!.Consumed.Contains("second_chance"),"lethal hit not prevented");
-            Require(Players.Distance(pawn.AbsOrigin!,start)<40,$"position was not rewound: frame={((SecondChance)Powers.Active[0]).LastRestoredFrame}, actual={pawn.AbsOrigin}, expected={start}");
+            AddTimer(.1f,()=>Probe("Deferred rewind restores the historical position after native damage",()=>
+                Require(Players.Distance(pawn.AbsOrigin!,start)<40,$"position was not rewound: actual={pawn.AbsOrigin}, expected={start}")),TimerFlags.STOP_ON_MAPCHANGE);
         }),TimerFlags.STOP_ON_MAPCHANGE);
         AddTimer(18.2f,()=>Probe("Second Chance only protects once per round",()=> {
             var boss=Mode.Boss!; Damage.NativeProbeHit(boss.EntityHandle.Raw,Mode.Opponents.First().EntityHandle.Raw,500,DamageTypes_t.DMG_GENERIC);

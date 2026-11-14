@@ -113,10 +113,10 @@ public sealed partial class Plugin
             Powers.NativeProbePair("invisibility","infinite_ammo"); Powers.NativeProbePair("invisibility","infinite_ammo",player:Ct());
             Require(Effects.HiddenEntityCount==0 && Powers.GetEffects(Ct()).HiddenEntityCount==0,"initial reveal");
         });
-        At(18,"Silence hides both bodies and equipment from other clients, preserving own view",()=> {
+        At(18,"Silence fades both bodies and carried equipment without removing transmission",()=> {
             Powers.SlowTick(); var boss=Mode.Boss!; var pawn=Players.AlivePawn(boss)!;
             Require(Effects.HiddenEntityCount>=2 && Powers.GetEffects(Ct()).HiddenEntityCount>=2,"body or equipment not concealed");
-            Require(Effects.HiddenFrom(ctRaw,pawn.Index) && !Effects.HiddenFrom(boss.EntityHandle.Raw,pawn.Index),"wrong recipients");
+            Require(pawn.Render.A==0 && pawn.ShadowStrength==0,"body/shadow not concealed");
             Require(pawn.Render.A==0 && Powers.Status("invisibility")=="hidden","fade did not finish");
         });
         At(18.1f,"Weapon-fire event reveals the shooter immediately without revealing other players",()=> {

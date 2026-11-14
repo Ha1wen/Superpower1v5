@@ -1,0 +1,10 @@
+[
+  {
+    "name": "Native deathmatch gives every active player a private pair without a T boss",
+    "passed": true
+  },
+  {
+    "name": "Deathmatch respawn rerolls the pair and resets cooldowns/one-use state",
+    "passed": true
+  }
+]
