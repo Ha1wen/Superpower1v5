@@ -19,7 +19,8 @@ public sealed class PlayerScale
         public Vector Capsule2 { get; }=Players.Copy(pawn.Collision.CapsuleCenter2);
         public float CapsuleRadius { get; }=pawn.Collision.CapsuleRadius;
         public Vector Origin { get; }=Players.Copy(pawn.AbsOrigin!);
-        public float ViewHeight { get; }=pawn.ViewOffset.Z>8 ? pawn.ViewOffset.Z : 64;
+        public float StandingEyeHeight { get; }=pawn.MovementServices?.As<CCSPlayer_MovementServices>().DuckAmount is null or <=.01f &&
+            pawn.ViewOffset.Z>0 ? pawn.ViewOffset.Z : 64;
     }
     private readonly Dictionary<uint,State> _states=new();
     public void Apply(CCSPlayerPawn pawn,float factor)
@@ -42,13 +43,26 @@ public sealed class PlayerScale
         Set(pawn.Collision.CapsuleCenter1,old.Capsule1.X*factor,old.Capsule1.Y*factor,old.Capsule1.Z*factor);
         Set(pawn.Collision.CapsuleCenter2,old.Capsule2.X*factor,old.Capsule2.Y*factor,old.Capsule2.Z*factor);
         pawn.Collision.CapsuleRadius=old.CapsuleRadius*factor;
-        pawn.ViewOffset.Z=EyeHeight(old.ViewHeight,movement?.DuckAmount ?? (crouched ? 1 : 0),factor);
-        if (pawn.CameraServices is { } camera) camera.OldPlayerViewOffsetZ=pawn.ViewOffset.Z;
+        // The client lowers the camera with the scaled model. The server's bullet
+        // trace uses the separate view offset, which movement can reset each tick.
+        SetEyeHeight(pawn,EyeHeight(old.StandingEyeHeight,movement?.DuckAmount ?? 0)*factor);
+    }
+
+    public float? UnscaledEyeHeight(CCSPlayerPawn pawn) =>
+        _states.TryGetValue(pawn.EntityHandle.Raw,out var original)
+            ? EyeHeight(original.StandingEyeHeight,pawn.MovementServices?.As<CCSPlayer_MovementServices>().DuckAmount ?? 0)
+            : null;
+
+    private static float EyeHeight(float standing,float duckAmount) =>
+        standing+(Math.Min(standing,46)-standing)*Math.Clamp(duckAmount,0,1);
+
+    private static void SetEyeHeight(CCSPlayerPawn pawn,float height)
+    {
+        if (Math.Abs(pawn.ViewOffset.Z-height)<.01f) return;
+        pawn.ViewOffset.Z=height;
         Utilities.SetStateChanged(pawn,"CBaseModelEntity","m_vecViewOffset");
     }
-    public static float EyeHeight(float standing,float duckAmount,float factor) =>
-        (standing+(Math.Min(standing,46)-standing)*Math.Clamp(duckAmount,0,1))*factor;
-    public static void DirtyBody(CCSPlayerPawn pawn)
+    public static void DirtyBody(CBaseEntity pawn)
     {
         // Scale is a scene-node field: dirty the owning body component, not pawn + node offset.
         NativeAPI.SchemaSetStateChanged(pawn.Handle,(uint)Schema.GetSchemaOffset("CBaseEntity","m_CBodyComponent"),uint.MaxValue,uint.MaxValue);
@@ -75,8 +89,8 @@ public sealed class PlayerScale
             Set(pawn.Collision.CapsuleCenter1,old.Capsule1.X,old.Capsule1.Y,old.Capsule1.Z);
             Set(pawn.Collision.CapsuleCenter2,old.Capsule2.X,old.Capsule2.Y,old.Capsule2.Z);
             pawn.Collision.CapsuleRadius=old.CapsuleRadius;
-            pawn.ViewOffset.Z=old.ViewHeight; DirtyBody(pawn);
-            Utilities.SetStateChanged(pawn,"CBaseModelEntity","m_vecViewOffset");
+            SetEyeHeight(pawn,EyeHeight(old.StandingEyeHeight,pawn.MovementServices?.As<CCSPlayer_MovementServices>().DuckAmount ?? 0));
+            DirtyBody(pawn);
         }
         _states.Clear();
     }

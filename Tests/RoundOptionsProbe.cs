@@ -41,14 +41,14 @@ public sealed partial class Plugin
             Powers.GetLoadout(Ct())!.StartCooldown("teleport",Server.CurrentTime,15);
             Require(Powers.GetLoadout(Ct())!.Remaining("teleport",Server.CurrentTime)>14 && Powers.Loadout!.Remaining("teleport",Server.CurrentTime)==0,"shared cooldown");
         });
-        At(13.3f,"CT Vampirism heals its owner from damage to the boss",()=> {
-            Powers.NativeProbePair("vampirism","infinite_ammo",player:Ct());
+        At(13.3f,"CT Blood Pact heals its owner from damage to the boss",()=> {
+            Powers.NativeProbePair("blood_pact","infinite_ammo",player:Ct());
             var pawn=Players.AlivePawn(Ct())!; pawn.Health=50;
             Damage.NativeProbeHit(Mode.Boss!.EntityHandle.Raw,ctRaw,20,DamageTypes_t.DMG_BULLET);
             Require(pawn.Health==70,"wrong heal owner"); Players.Heal(Mode.Boss,100); Players.Heal(Ct(),100);
         });
         At(13.6f,"Removing boss movement powers does not remove CT movement powers",()=> {
-            Powers.NativeProbePair("super_speed","low_gravity"); Powers.NativeProbePair("super_speed","low_gravity",player:Ct());
+            Powers.NativeProbePair("super_speed","decoy_clone"); Powers.NativeProbePair("super_speed","decoy_clone",player:Ct());
             var pawn=Players.AlivePawn(Ct())!; var speed=pawn.VelocityModifier; var gravity=pawn.GravityScale;
             Powers.NativeProbePair("teleport","infinite_ammo");
             Require(Math.Abs(pawn.VelocityModifier-speed)<.001 && Math.Abs(pawn.GravityScale-gravity)<.001,"cross-owner cleanup");
@@ -67,7 +67,7 @@ public sealed partial class Plugin
         });
         At(14.1f,"Moving a powered player to spectators clears their effects",()=> {
             var player=Mode.Opponents.Skip(1).First(); spectatorRaw=player.EntityHandle.Raw;
-            Powers.NativeProbePair("super_speed","low_gravity",player:player);
+            Powers.NativeProbePair("super_speed","decoy_clone",player:player);
             player.ChangeTeam(CsTeam.Spectator);
         });
         At(14.2f,"A spectator's old pawn cannot regain powers on the next tick",()=> {
@@ -87,7 +87,7 @@ public sealed partial class Plugin
         });
         At(14.8f,"CT utility produces four real projectiles without recursion",()=> {
             var power=(ClusterGrenade)Powers.GetActive(Ct())[0];
-            Require(power.ChildCount==3,"wrong cluster owner or count");
+            Require(power.ChildCount==4,"wrong cluster owner or count");
             Powers.NativeProbePair("teleport","infinite_ammo",player:Ct());
         });
         At(15,"Wall Vision supports several owners",()=> {

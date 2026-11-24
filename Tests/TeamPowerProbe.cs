@@ -40,7 +40,7 @@ public sealed partial class Plugin
             _realShotWaiting=false; _realShotSaved=true; StopProbeBots(true);
             Probe("Second Chance intercepts an actual bot weapon hit",()=>Require(Players.AlivePawn(Mode.Boss) is { Health:>0 },"boss died to real weapon damage"));
         });
-        AddTimer(12,()=>Probe("One T boss and five CT players; all 21 powers apply",()=> {
+        AddTimer(12,()=>Probe("One T boss and five CT players; all 24 powers apply",()=> {
             Require(Mode.Live && Mode.Boss?.TeamNum==2 && Mode.Opponents.Count()==5,"roster");
             _fixedBoss=Players.Key(Mode.Boss!);
             foreach (var definition in Models.PowerCatalog.All)
@@ -124,19 +124,19 @@ public sealed partial class Plugin
     }
     private void StartUtilityProbe(string kind,string key,ushort item)
     {
-        Probe($"Cluster creates four {kind} projectiles (item {item})",()=> {
+        Probe($"Cluster creates five {kind} projectiles (item {item})",()=> {
             Powers.NativeProbePair("cluster_grenade","infinite_ammo");
             var owner=Players.AlivePawn(Mode.Boss)!; var feet=owner.AbsOrigin!;
             var before=_utilityEvents.GetValueOrDefault(key);
             var original=GrenadeFactory.Create(kind,new(feet.X,feet.Y,feet.Z+80),new(200,0,100),owner,item);
             Require(original is { IsValid:true },"native projectile creation failed"); var raw=original!.EntityHandle.Raw;
-            AddTimer(.25f,()=>Probe($"Four {kind} copies do not split recursively",()=> {
+            AddTimer(.25f,()=>Probe($"Five {kind} projectiles do not split recursively",()=> {
                 var count=Utilities.FindAllEntitiesByDesignerName<CBaseCSGrenadeProjectile>(kind).Count(p=>p.Thrower.Raw==owner.EntityHandle.Raw);
-                Require(count==4 && ((ClusterGrenade)Powers.Active[0]).ChildCount==3,$"projectiles={count}, children={((ClusterGrenade)Powers.Active[0]).ChildCount}");
+                Require(count==5 && ((ClusterGrenade)Powers.Active[0]).ChildCount==4,$"projectiles={count}, children={((ClusterGrenade)Powers.Active[0]).ChildCount}");
             }),TimerFlags.STOP_ON_MAPCHANGE);
-            AddTimer(5.5f,()=>Probe($"All four {kind} utilities actually activate (item {item})",()=> {
+            AddTimer(5.5f,()=>Probe($"All five {kind} utilities actually activate (item {item})",()=> {
                 var count=_utilityEvents.GetValueOrDefault(key)-before;
-                try { Require(count>=4,$"native activation events={count}"); }
+                try { Require(count>=5,$"native activation events={count}"); }
                 finally { Powers.NativeProbePair("teleport","infinite_ammo"); if (Players.Entity<CBaseCSGrenadeProjectile>(raw) is { IsValid:true } entity) entity.Remove(); }
             }),TimerFlags.STOP_ON_MAPCHANGE);
         });

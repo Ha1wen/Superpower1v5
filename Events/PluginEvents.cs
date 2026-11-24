@@ -31,12 +31,19 @@ public sealed partial class Plugin
         RegisterEventHandler<EventPlayerTeam>((e,i)=> {
             Guard(()=> { if (!e.Disconnect && e.Userid is { } p) Mode.TeamChanged(p,e.Team); }); return HookResult.Continue;
         });
-        RegisterEventHandler<EventWeaponFire>((e,i)=> { Guard(()=> { if (e.Userid is { } p) Powers.Fire(p); }); return HookResult.Continue; });
+        RegisterEventHandler<EventWeaponFire>((e,i)=> {
+            Guard(()=> {
+                if (e.Userid is not { } player) return;
+                if (e.Weapon is "taser" or "weapon_taser") Powers.TaserFired(player);
+                Powers.Fire(player);
+            });
+            return HookResult.Continue;
+        });
         RegisterEventHandler<EventPlayerJump>((e,i)=> { Guard(()=> { if (e.Userid is { } p) Powers.Jump(p); }); return HookResult.Continue; });
         RegisterEventHandler<EventBulletImpact>((e,i)=> { Guard(()=> { if (e.Userid is { } p) Powers.Impact(e.X,e.Y,e.Z,p); }); return HookResult.Continue; });
         RegisterEventHandler<EventWeaponReload>((e,i)=> { Guard(()=> { if (e.Userid is { } p) Powers.Noise(p); }); return HookResult.Continue; });
         RegisterEventHandler<EventPlayerFootstep>((e,i)=> { Guard(()=>Powers.Footstep(e.Userid)); return HookResult.Continue; });
-        RegisterEventHandler<EventGrenadeThrown>((e,i)=> { Guard(()=> { if (e.Userid is { } p) Powers.Noise(p); }); return HookResult.Continue; });
+        RegisterEventHandler<EventGrenadeThrown>((e,i)=> { Guard(()=> { if (e.Userid is { } p) { Powers.Noise(p); Powers.GrenadeThrown(p,e.Weapon); } }); return HookResult.Continue; });
         RegisterEventHandler<EventItemPickup>((e,i)=> { Guard(()=> { if (!e.Silent && e.Userid is { } p) Powers.Noise(p); }); return HookResult.Continue; });
         RegisterEventHandler<EventWeaponZoom>((e,i)=> { Guard(()=> { if (e.Userid is { } p) Powers.Noise(p); }); return HookResult.Continue; });
         RegisterEventHandler<EventBombBeginplant>((e,i)=> { Guard(()=> { if (e.Userid is { } p) Powers.Noise(p); }); return HookResult.Continue; });
@@ -50,6 +57,7 @@ public sealed partial class Plugin
         RegisterEventHandler<EventPlayerDeath>((e,i)=> {
             Guard(()=> {
                 if (!Mode.Live) return;
+                Powers.PlayerKilled(e.Attacker,e.Userid);
                 Powers.Stop(e.Userid);
                 if (Mode.IsDeathmatch) return;
                 if (Mode.IsBoss(e.Userid)) Broadcast("The superpowered player has been eliminated!");

@@ -1,24 +1,25 @@
 # Superpower 1v5
 
-A CounterStrikeSharp plugin for CS2 with **21 equally likely powers** and two different powers per loadout. In 1v5, the human who chooses T stays the boss against up to five CT opponents. Native deathmatch gives every active player a new pair on each respawn. Normal health is 100; Juggernaut grants 500.
+A CounterStrikeSharp plugin for CS2 with **24 equally likely powers** and two different powers per loadout. In 1v5, the human who chooses T stays the boss against up to five CT opponents. Native deathmatch gives every active player a new pair on each respawn. Normal health is 100; Juggernaut grants 500.
 
-## v1.8.0 changes
+## v1.9.0 changes
 
-- Tiny scales the body and eye height once, follows crouch interpolation, and refreshes the firing height when shooting.
-- Rapid Fire retains its 1.6x firing rate and clears aim punch, camera kick and weapon recoil index for its owner. Normal spread remains. Client recoil settings are replicated only to that player when supported and restored on cleanup.
-- Second Chance suppresses the lethal hit first, then rewinds after the damage/lag-compensation stack unwinds. It handles explicitly populated bullet hitgroups, provides a short recovery window and prevents overlapping teleports during recovery.
-- Invisibility fades known model entities and shadows instead of removing a live player's transmission. Planted C4 and unrelated world entities are excluded. Planting reveals the player; fully invisible players have radar spotting cleared, and Wall Vision cannot silently re-spot them.
-- Deathmatch cleans up effects on death and rolls a different pair on respawn with fresh cooldowns and one-use state. A configuration with only two available powers necessarily keeps that pair.
-- Pyromaniac now ignites real Molotovs with native spreading fire, damage ramp, sounds and smoke extinguishing. Generated Molotovs cannot trigger Cluster Grenade recursively.
-- New powers: Infinite Jump, Random Teleport and Forcefield.
+- Added Decoy Clone, Thunder God, Unlimited Wallbang, and Random Swap.
+- Invisibility hides carried C4 cosmetics from opponents as the fade begins. Planting reveals the carrier and the planted bomb renders normally.
+- Tiny aligns the server's shot origin with the scaled standing and crouched view, including real player hitboxes.
+- Cluster Grenade throws five total grenades along a centered spread and replaces the thrown grenade after 30 seconds. Infinite Ammo also replenishes grenades.
+- Explosive Bullets defaults to 80 base damage and a 250-unit radius. Blood Pact can heal past normal maximum health and grants 10% movement speed after the first enemy kill.
+- Removed Low Gravity and Sandevistan's screen effect.
 
 ## Requirements and installation
 
 Requires a CS2 dedicated server, Metamod:Source, **CounterStrikeSharp API 1.0.380.0** and its .NET 10 runtime. Windows is tested. Native grenade and damage bindings are pinned to the tested engine/API and need revalidation after updates.
 
-Download [Superpower1v5-v1.8.0.zip](releases/Superpower1v5-v1.8.0.zip) and extract it into the server's `game/csgo/` directory, merging `addons/`. Back up an existing plugin/config first; the package contains default configuration. Restart the server after installation. Older ZIPs in `releases/` are historical packages.
+Decoy Clone's walking animation uses AnimGraph2 on Windows CS2 build 26879581. On other builds, the decoy still moves, shows the held weapon, and plays footsteps using the standard prop behavior.
 
-Alternatively, build and deploy from this checkout using the commands below. `tools/Deploy.ps1 -MigrateConfig` backs up and migrates an existing config to version 8 while preserving existing tuning.
+Back up the existing plugin and config. Download [Superpower1v5-v1.9.0.zip](https://github.com/Ha1wen/Superpower1v5/releases/download/v1.9.0/Superpower1v5-v1.9.0.zip), stop the server, and extract it into `game/csgo/`, merging `addons/`. The ZIP includes default configuration. Restart the server after installation.
+
+To keep an existing config, build from this checkout and use `tools/Deploy.ps1 -MigrateConfig`. The script backs up the config and migrates it to version 11.
 
 Installed paths under `game/csgo/`:
 
@@ -42,13 +43,13 @@ Native CS2 deathmatch (`game_type 1`, `game_mode 2`, or `+game_alias deathmatch`
 | ID | Default behavior |
 |---|---|
 | `super_speed` | 2.5x movement speed |
-| `vampirism` | Heal 100% of actual health damage dealt, up to the owner's health cap |
+| `blood_pact` | Heal 100% of actual health damage dealt, including health above your normal maximum. Your first enemy kill gives +10% movement speed for the rest of your life or round |
 | `invisibility` | Sound reveals you; after 0.5 seconds of silence, fade out over 1 second. Shift/crouch walking stays quiet |
 | `teleport` | Aim-directed safe blink, 15-second cooldown |
-| `explosive_bullets` | 55 base blast damage, radius 180, distance falloff and wall checks |
-| `infinite_ammo` | Refill the active firearm's normal magazine |
+| `explosive_bullets` | 80 base blast damage, radius 250, distance falloff and wall checks |
+| `infinite_ammo` | Refill the active firearm’s magazine and replace each thrown grenade after the throw animation |
 | `rapid_fire` | 1.6x server firing rate without recoil; normal spread remains |
-| `low_gravity` | 0.35x personal gravity |
+| `decoy_clone` | Send your player model walking in your facing direction. A bullet triggers a flashbang, or the clone disappears after 10 seconds. It carries a cosmetic copy of your equipped weapon and emits footsteps while moving. Default cooldown is 20 seconds |
 | `wall_vision` | Opponent outlines, radar and bearings for the owner; silent fully invisible targets stay hidden |
 | `knockback` | Bullet hits push opponents with an 800-unit horizontal impulse and lift |
 | `second_chance` | Once per round/life, block lethal damage and rewind position, health, armor and velocity about three seconds |
@@ -56,20 +57,23 @@ Native CS2 deathmatch (`game_type 1`, `game_mode 2`, or `+game_alias deathmatch`
 | `sandevistan` | Freeze opponents' movement and attacks for 10 seconds, 35-second cooldown |
 | `pyromaniac` | Bullet impacts ignite native Molotov fire; smoke extinguishes it |
 | `random_explosion` | Random Kill: kill a random unshielded living player, possibly yourself; 20-second cooldown |
-| `tiny` | Half-sized body, camera and collision with synchronized firing height |
+| `tiny` | Half-sized body and collision, with a matching server firing height when standing or crouching |
 | `juggernaut` | 500 starting/max HP while assigned |
-| `cluster_grenade` | Each thrown utility becomes four projectiles of its type |
+| `cluster_grenade` | Four copies fan out from each throw while the original follows its usual path. The thrown grenade returns after 30 seconds, or immediately after the throw animation with Infinite Ammo |
 | `infinite_jump` | Press jump again in midair for unlimited additional jumps; preserves horizontal momentum |
 | `random_teleport` | Random clear nav-mesh destination with spawn-point fallback; 20-second cooldown |
 | `forcefield` | Block all damage for 10 seconds; 35-second cooldown from activation |
+| `unlimited_wallbang` | Fire through cover with no penetration damage penalty. Normal weapon range and armor still apply |
+| `thunder_god` | An equipped Zeus fires exactly along your crosshair across the map. Cover blocks the shot, and the Zeus recharges in 10 seconds. |
+| `random_swap` | Trade positions with another randomly selected living player, 20-second cooldown |
 
 Infinite Jump is passive: release and press jump for each additional air jump. Random Teleport and Forcefield use the normal ability-slot commands. Failed teleport searches do not spend cooldown. Forcefield takes precedence over Second Chance and also excludes its owner from Random Kill selection. Forced suicides and administrative deaths are not damage events.
 
-Invisibility uses model alpha and shadow strength for the body, carried weapons and directly parented model attachments. Viewmodels, planted C4, thrown utility and unrelated owner-linked world entities remain transmitted. Reloading, planting, defusing, running, jumps, shots and other noisy actions reveal the player. Radar spotting is suppressed only while fully concealed; ordinary spotting resumes when visible. Cleanup restores model color, render mode and shadows.
+Invisibility fades the player, their carried weapons and their attached equipment models. Full concealment hides those models and their shadows while preserving the first-person viewmodel. Planted C4, dropped equipment and thrown utility keep their ordinary rendering. Reloading, planting, defusing, running, jumps, shots and other noisy actions reveal the player. Radar spotting is suppressed while fully concealed. Cleanup restores model colors, flags, render modes and shadows.
 
 Pyromaniac's `Interval` limits ignition frequency, `MaxEntities` limits simultaneous owned pools, and `Duration` caps their lifetime. Native Molotov convars govern spreading, damage and natural lifetime; the old custom-pool `Strength`/`Radius` fields are retained for config compatibility and do not override native fire. Owned projectiles/fire are removed on cleanup. Cluster Grenade copies cannot split again and are bounded separately.
 
-All 21 enabled powers have a 4.76% chance per slot and a 9.52% chance of appearing in a pair. Disabled/blacklisted powers are excluded; keep at least two compatible powers available. Defaults are in [Superpower1v5.example.json](Superpower1v5.example.json).
+All 24 enabled powers have a 4.17% chance per slot and an 8.33% chance of appearing in a pair. Disabled/blacklisted powers are excluded; keep at least two compatible powers available. Defaults are in [Superpower1v5.example.json](Superpower1v5.example.json).
 
 ## Commands
 
@@ -108,6 +112,6 @@ Install the .NET 10 SDK and use a compatible server's API directory:
 
 The `server/development/Superpower1v5` layout also works without arguments. Pass `-DotnetPath` if the SDK is outside PATH. Build runs the production Release build, automated checks and config generation; output is `bin/Release/net10.0/`. Deployment can trigger CounterStrikeSharp hot reload and restart the challenge round.
 
-See [verification notes](docs/VERIFICATION.md) for exact test scope, recorded native checks and remaining client playtests. The historical v1.7 results under `docs/verification/` are separate from the v1.8 checks. Native test probes and damage injectors are excluded from production.
+See the [verification notes](docs/VERIFICATION.md) for the test scope and remaining client playtests. Native test probes and damage injectors are excluded from production.
 
-Human client testing is still needed for Tiny's crosshair alignment and Invisibility's visual behavior/crash regression. A previously documented Windows access violation on server shutdown after successful plugin unload also remains reproducible; gameplay checks complete before that shutdown.
+Human client testing is still needed for Tiny's crosshair alignment and the appearance of Invisibility and Decoy Clone. Some isolated Windows servers still encounter an access violation during shutdown after the gameplay checks and plugin unload complete.

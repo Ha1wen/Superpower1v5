@@ -1,4 +1,5 @@
 using System.Drawing;
+using System.Runtime.CompilerServices;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using Superpower1v5.Support;
@@ -7,95 +8,144 @@ namespace Superpower1v5.Managers;
 
 public sealed class EffectsManager
 {
-    private sealed class Scalar(float baseline, float actualBaseline)
+    private sealed class Scalar(float baseline)
     {
         public float Baseline { get; } = baseline;
-        public float ActualBaseline { get; } = actualBaseline;
         public Dictionary<string, float> Multipliers { get; } = new();
         public float Multiplier => Multipliers.Values.Aggregate(1f, (a, b) => a * b);
     }
     private sealed record Outline(uint Target, uint Viewer, uint Relay, uint Glow, uint RelayIndex, uint GlowIndex);
-    private readonly Dictionary<(uint pawn, bool gravity), Scalar> _scalars = new();
-    private readonly Dictionary<uint, (Color color, RenderMode_t mode,float shadow)> _colors = new();
+    private readonly Dictionary<uint, Scalar> _scalars = new();
+    // Keep invisible players and equipment networked so existing client references stay valid.
+    private const uint HiddenEffects=(1u<<5)|(1u<<10);
+    private readonly Dictionary<uint, (Color color, RenderMode_t mode,float shadow,uint effects)> _colors = new();
     private readonly Dictionary<uint, (int word, uint bit, bool hadBit, bool spotted)> _radar = new();
     private sealed class RadarBaseline(bool spotted)
     { public bool Spotted { get; }=spotted; public HashSet<EffectsManager> Owners { get; }=[]; }
     private static readonly Dictionary<uint,RadarBaseline> SharedRadar=new();
     private readonly Dictionary<uint, Outline> _outlines = new();
     private Outline[] _transmitOutlines = [];
-    private sealed record Concealed(uint Viewer,uint[] Indices);
+    private sealed record Concealed(uint Carrier,uint[] Indices,uint[] CarriedBombIndices,uint[] BombViewers);
     private Concealed? _concealed;
     public int OutlineCount => _outlines.Count;
     public int HiddenEntityCount => Volatile.Read(ref _concealed)?.Indices.Length ?? 0;
-    public bool HiddenFrom(uint viewer,uint entityIndex) => Volatile.Read(ref _concealed) is { } hidden && hidden.Viewer!=viewer && Array.IndexOf(hidden.Indices,entityIndex)>=0;
-    public IReadOnlyList<CEntityInstance> AttachedEntities(CCSPlayerPawn pawn)
+    public bool HiddenFrom(uint viewer,uint entityIndex) => Volatile.Read(ref _concealed) is { } hidden && hidden.Carrier!=viewer && Array.IndexOf(hidden.Indices,entityIndex)>=0;
+    public IReadOnlyList<CBaseModelEntity> AttachedEntities(CCSPlayerPawn pawn)
     {
-        // Only actual model classes may be faded. Ownership alone does not mean attachment:
-        // a planted bomb, grenade or world entity can retain the planter/thrower as its owner.
-        var models=new Dictionary<uint,CEntityInstance> { [pawn.EntityHandle.Raw]=pawn };
+        var models=new Dictionary<uint,CBaseModelEntity> { [pawn.EntityHandle.Raw]=pawn };
         if (pawn.WeaponServices is { } weapons)
             foreach (var handle in weapons.MyWeapons)
                 if (handle.Value is { IsValid:true } weapon && weapon.OwnerEntity.Raw==pawn.EntityHandle.Raw)
                     models[weapon.EntityHandle.Raw]=weapon;
-        var props=Utilities.FindAllEntitiesByDesignerName<CDynamicProp>("prop_dynamic").ToArray();
-        for (var pass=0;pass<2;pass++)
-        {
-            foreach (var prop in props)
-            {
-                if (!prop.IsValid || models.ContainsKey(prop.EntityHandle.Raw)) continue;
-                var parent=prop.CBodyComponent?.SceneNode?.PParent?.Owner;
-                if (parent is { IsValid:true } && models.ContainsKey(parent.EntityHandle.Raw)) models[prop.EntityHandle.Raw]=prop;
-            }
-        }
+        var roots=models.Values.ToArray();
+        foreach (var model in roots) AddChildren(model.CBodyComponent?.SceneNode?.Child,models,0);
         return models.Values.ToArray();
     }
-    public void Conceal(CCSPlayerPawn pawn,CCSPlayerController viewer,IReadOnlyList<CEntityInstance>? attached=null) =>
-        Volatile.Write(ref _concealed,new(viewer.EntityHandle.Raw,(attached ?? AttachedEntities(pawn)).Select(e=>e.Index).Append(pawn.Index).Distinct().ToArray()));
+    private static void AddChildren(CGameSceneNode? child,Dictionary<uint,CBaseModelEntity> models,int depth)
+    {
+        if (depth>=8) return;
+        for (var count=0;child is not null && count<64;child=child.NextSibling,count++)
+        {
+            if (child.Owner is not { IsValid:true } entity || !IsEquipmentModel(entity.DesignerName)) continue;
+            models.TryAdd(entity.EntityHandle.Raw,entity.As<CBaseModelEntity>());
+            AddChildren(child.Child,models,depth+1);
+        }
+    }
+    private static bool IsEquipmentModel(string name) =>
+        name is "prop_dynamic" or "prop_dynamic_override" or "weaponworldmodel" or "weapon_world_model" or
+        "wearable" or "wearable_item" or "econ_wearable" ||
+        name.StartsWith("weapon_",StringComparison.Ordinal) && !name.Contains("viewmodel",StringComparison.Ordinal);
+    public void Conceal(CCSPlayerPawn carrier,CCSPlayerController owner,IReadOnlyList<CBaseModelEntity> attached,bool fullyHidden)
+    {
+        var bombIndices=new HashSet<uint>();
+        var activeWeapon=carrier.WeaponServices?.ActiveWeapon.Raw;
+        var holdingBomb=false;
+        foreach (var bomb in attached.Where(entity=>entity.DesignerName=="weapon_c4" && entity.OwnerEntity.Raw==carrier.EntityHandle.Raw))
+        {
+            bombIndices.Add(bomb.Index);
+            holdingBomb|=bomb.EntityHandle.Raw==activeWeapon;
+            AddBombAttachments(bomb.CBodyComponent?.SceneNode?.Child,bombIndices,0);
+            if (bomb.EffectEntity.Value is { IsValid:true } effect && IsBombAttachment(effect.DesignerName))
+            {
+                bombIndices.Add(effect.Index);
+                AddBombAttachments(effect.CBodyComponent?.SceneNode?.Child,bombIndices,0);
+            }
+            foreach (var charm in Utilities.FindAllEntitiesByDesignerName<CBaseEntity>("keychain_module"))
+                if (charm.IsValid && charm.OwnerEntity.Raw==bomb.EntityHandle.Raw)
+                    bombIndices.Add(charm.Index);
+        }
+        var bombViewers=new List<uint> { owner.EntityHandle.Raw };
+        // In-eye spectators need the active C4 for the viewmodel. A stowed C4
+        // has no first-person use and creates its own light if it is sent.
+        if (holdingBomb)
+            foreach (var player in Utilities.GetPlayers())
+                if (player.ObserverPawn.Value?.ObserverServices is { } observer &&
+                    observer.ObserverMode==(byte)ObserverMode_t.OBS_MODE_IN_EYE && observer.ObserverTarget.Raw==carrier.EntityHandle.Raw)
+                    bombViewers.Add(player.EntityHandle.Raw);
+        var indices=fullyHidden ? attached.Select(e=>e.Index).Concat(bombIndices).Distinct().ToArray() : [];
+        Volatile.Write(ref _concealed,new(owner.EntityHandle.Raw,indices,bombIndices.ToArray(),bombViewers.ToArray()));
+    }
+
+    private static void AddBombAttachments(CGameSceneNode? child,HashSet<uint> indices,int depth)
+    {
+        if (depth>=8) return;
+        for (var count=0;child is not null && count<64;child=child.NextSibling,count++)
+        {
+            if (child.Owner is not { IsValid:true } entity) continue;
+            var name=entity.DesignerName;
+            if (name is "planted_c4" or "player" || name.Contains("viewmodel",StringComparison.Ordinal)) continue;
+            if (IsBombAttachment(name)) indices.Add(entity.Index);
+            AddBombAttachments(child.Child,indices,depth+1);
+        }
+    }
+
+    private static bool IsBombAttachment(string name) =>
+        IsEquipmentModel(name) || name is "keychain_module" or "econ_entity" or "info_particle_system" or
+        "env_particle_glow" or "env_sprite" or "env_glow" or "light_dynamic" ||
+        name.StartsWith("light_",StringComparison.Ordinal) || name.StartsWith("prop_",StringComparison.Ordinal);
+
+    private static bool HideCarriedBombFrom(Concealed hidden,uint viewer) => !hidden.BombViewers.Contains(viewer);
+#if SERVER_SMOKE
+    internal bool HideCarriedBombFrom(uint viewer,uint entityIndex) =>
+        Volatile.Read(ref _concealed) is { } hidden && HideCarriedBombFrom(hidden,viewer) && hidden.CarriedBombIndices.Contains(entityIndex);
+#endif
     public void ClearConcealment() => Volatile.Write(ref _concealed,null);
 
-    public void Speed(CCSPlayerPawn pawn, string source, float amount) => SetScalar(pawn, source, amount, false);
-    public void Gravity(CCSPlayerPawn pawn, string source, float amount) => SetScalar(pawn, source, amount, true);
-    private void SetScalar(CCSPlayerPawn pawn, string source, float amount, bool gravity)
+    public void Speed(CCSPlayerPawn pawn, string source, float amount)
     {
-        var key = (pawn.EntityHandle.Raw, gravity);
-        if (!_scalars.TryGetValue(key, out var scalar))
-            _scalars[key] = scalar = new(gravity ? pawn.GravityScale : pawn.VelocityModifier, gravity ? pawn.ActualGravityScale : 0);
-        scalar.Multipliers[source] = amount;
-        Write(pawn, gravity, scalar.Baseline * scalar.Multiplier, scalar.ActualBaseline * scalar.Multiplier);
+        var key=pawn.EntityHandle.Raw;
+        if (!_scalars.TryGetValue(key,out var scalar)) _scalars[key]=scalar=new(pawn.VelocityModifier);
+        scalar.Multipliers[source]=amount;
+        WriteSpeed(pawn,scalar.Baseline*scalar.Multiplier);
     }
-    private static void Write(CCSPlayerPawn? pawn, bool gravity, float amount, float actualAmount)
+    private static void WriteSpeed(CCSPlayerPawn? pawn,float amount)
     {
-        if (pawn is not { IsValid: true }) return;
-        if (gravity)
-        {
-            pawn.GravityScale = amount;
-            pawn.ActualGravityScale = actualAmount;
-            Utilities.SetStateChanged(pawn, "CBaseEntity", "m_flGravityScale");
-            // ActualGravityScale is server-only and must not be passed to SetStateChanged.
-        }
-        else
-        {
-            pawn.VelocityModifier = amount;
-            Utilities.SetStateChanged(pawn, "CCSPlayerPawn", "m_flVelocityModifier");
-        }
+        if (pawn is not { IsValid:true }) return;
+        pawn.VelocityModifier=amount;
+        Utilities.SetStateChanged(pawn,"CCSPlayerPawn","m_flVelocityModifier");
     }
     public void RemoveSource(string source)
     {
         foreach (var (key, scalar) in _scalars.ToArray())
         {
             if (!scalar.Multipliers.Remove(source)) continue;
-            Write(Players.Entity<CCSPlayerPawn>(key.pawn), key.gravity, scalar.Baseline * scalar.Multiplier, scalar.ActualBaseline * scalar.Multiplier);
+            WriteSpeed(Players.Entity<CCSPlayerPawn>(key),scalar.Baseline*scalar.Multiplier);
             if (scalar.Multipliers.Count == 0) _scalars.Remove(key);
         }
     }
     public void Fade(CBaseModelEntity entity, byte alpha)
     {
         if (!entity.IsValid) return;
-        _colors.TryAdd(entity.EntityHandle.Raw, (entity.Render, entity.RenderMode,entity.ShadowStrength));
-        if (entity.Render.A==alpha && entity.RenderMode==RenderMode_t.kRenderTransAlpha) return;
-        entity.RenderMode = RenderMode_t.kRenderTransAlpha;
-        entity.Render = Color.FromArgb(alpha, entity.Render.R, entity.Render.G, entity.Render.B);
-        entity.ShadowStrength=alpha/255f*_colors[entity.EntityHandle.Raw].shadow;
+        var raw=entity.EntityHandle.Raw;
+        _colors.TryAdd(raw,(entity.Render,entity.RenderMode,entity.ShadowStrength,entity.Effects&HiddenEffects));
+        var original=_colors[raw];
+        var mode=alpha==0 ? RenderMode_t.kRenderNone : RenderMode_t.kRenderTransAlpha;
+        SetVisibilityEffects(entity,alpha==0 ? HiddenEffects : original.effects);
+        var shadow=alpha/255f*original.shadow;
+        if (entity.Render.A==alpha && entity.RenderMode==mode && entity.ShadowStrength==shadow) return;
+        entity.RenderMode=mode;
+        entity.Render=Color.FromArgb(alpha,entity.Render.R,entity.Render.G,entity.Render.B);
+        entity.ShadowStrength=shadow;
         Utilities.SetStateChanged(entity, "CBaseModelEntity", "m_clrRender");
         Utilities.SetStateChanged(entity, "CBaseModelEntity", "m_nRenderMode");
         Utilities.SetStateChanged(entity, "CBaseModelEntity", "m_flShadowStrength");
@@ -109,12 +159,21 @@ public sealed class EffectsManager
             if (entity is { IsValid: true })
             {
                 entity.Render = old.color; entity.RenderMode = old.mode; entity.ShadowStrength=old.shadow;
+                SetVisibilityEffects(entity,old.effects);
                 Utilities.SetStateChanged(entity, "CBaseModelEntity", "m_clrRender");
                 Utilities.SetStateChanged(entity, "CBaseModelEntity", "m_nRenderMode");
                 Utilities.SetStateChanged(entity, "CBaseModelEntity", "m_flShadowStrength");
             }
             _colors.Remove(raw);
         }
+    }
+    private static void SetVisibilityEffects(CBaseModelEntity entity,uint flags)
+    {
+        var effects=entity.Effects;
+        var updated=(effects&~HiddenEffects)|flags;
+        if (updated==effects) return;
+        entity.Effects=updated;
+        Utilities.SetStateChanged(entity,"CBaseEntity","m_fEffects");
     }
     public void Reveal(CCSPlayerPawn pawn, CCSPlayerController viewer)
     {
@@ -190,7 +249,24 @@ public sealed class EffectsManager
     }
     // CheckTransmit may run on networking workers. Only read an immutable index snapshot here.
     public void FilterTransmission(CCheckTransmitInfoList clients)
-    { FilterOutlines(clients); }
+    {
+        FilterOutlines(clients);
+        var hidden=Volatile.Read(ref _concealed);
+        if (hidden is null || hidden.CarriedBombIndices.Length==0) return;
+        // C4 creates its holstered light on the client whenever the weapon is present.
+        // Keep it in the carrier's inventory and preserve the carrier's first-person view.
+        foreach (var (info,viewer) in clients)
+        {
+            if (!HideCarriedBombFrom(hidden,viewer?.EntityHandle.Raw??0)) continue;
+            // The optional always-send bit vector belongs to SourceTV and replay.
+            var hasAlways=Unsafe.BitCast<CFixedBitVecBase,nint>(info.TransmitAlways)!=0;
+            foreach (var index in hidden.CarriedBombIndices)
+            {
+                info.TransmitEntities.Remove(index);
+                if (hasAlways) info.TransmitAlways.Remove(index);
+            }
+        }
+    }
     public void FilterOutlines(CCheckTransmitInfoList clients)
     {
         var outlines = Volatile.Read(ref _transmitOutlines);
@@ -207,7 +283,7 @@ public sealed class EffectsManager
     }
     // Invisibility uses model alpha rather than removing a live pawn/equipment from PVS.
     // Removing entities referenced by a client controller/viewmodel can crash the client.
-    // The concealment snapshot above is diagnostic only; it never filters transmission.
+    // Carried C4 and its visual children are filtered separately for other viewers.
     public static void SuppressRadar(CCSPlayerPawn pawn)
     {
         var state=pawn.EntitySpottedState;
@@ -248,7 +324,7 @@ public sealed class EffectsManager
     }
     public void Clear()
     {
-        foreach (var (key, scalar) in _scalars) Write(Players.Entity<CCSPlayerPawn>(key.pawn), key.gravity, scalar.Baseline, scalar.ActualBaseline);
+        foreach (var (key, scalar) in _scalars) WriteSpeed(Players.Entity<CCSPlayerPawn>(key),scalar.Baseline);
         _scalars.Clear(); RestoreColorsExcept(new HashSet<uint>()); ClearRadar(); ClearConcealment();
     }
 }

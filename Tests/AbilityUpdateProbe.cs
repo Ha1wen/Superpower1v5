@@ -38,6 +38,34 @@ public sealed partial class Plugin
         BootstrapUpdateBots();
         PowerContext Context() => new(this,Mode.Boss!.EntityHandle.Raw);
         Vector? history=null; Vector? firePosition=null; CBasePlayerWeapon? clockWeapon=null; int originalClock=0;
+        CBasePlayerWeapon? knife=null, carriedBomb=null;
+        if (ProbeDirectory.Contains("bomb-transmit",StringComparison.OrdinalIgnoreCase))
+        {
+            var sawVisible=0;
+            var sawHidden=0;
+            var leaked=0;
+            RegisterListener<Listeners.CheckTransmit>(clients=> {
+                if (carriedBomb is not { IsValid:true } bomb) return;
+                foreach (var (info,viewer) in clients)
+                {
+                    if (viewer is not { IsHLTV:true }) continue;
+                    var raw=viewer.EntityHandle.Raw;
+                    var hidden=Effects.HideCarriedBombFrom(raw,bomb.Index);
+                    var always=System.Runtime.CompilerServices.Unsafe.BitCast<CFixedBitVecBase,nint>(info.TransmitAlways)!=0 &&
+                        info.TransmitAlways.Contains(bomb.Index);
+                    var transmitted=info.TransmitEntities.Contains(bomb.Index);
+                    if (hidden)
+                    {
+                        Interlocked.Exchange(ref sawHidden,1);
+                        if (transmitted || always) Interlocked.Exchange(ref leaked,1);
+                    }
+                    else if (transmitted) Interlocked.Exchange(ref sawVisible,1);
+                }
+            });
+            UpdateAt(18,"Native SourceTV snapshots withhold C4 during invisibility and send it after reveal",()=> {
+                Require(sawVisible==1 && sawHidden==1 && leaked==0,$"visible={sawVisible}, hidden={sawHidden}, leaked={leaked}");
+            });
+        }
         UpdateAt(10,"One T boss and five CT opponents run with the expanded catalog",()=> {
             Require(Mode.Live && Mode.Boss is not null && Mode.Opponents.Count()==5,"1v5 roster not live");
             foreach (var player in Mode.Eligible())
@@ -47,17 +75,17 @@ public sealed partial class Plugin
             }
             foreach (var definition in Models.PowerCatalog.All)
             { Powers.NativeProbePair(definition.Id,definition.Id=="infinite_ammo" ? "teleport" : "infinite_ammo"); Powers.Tick(); Powers.PostThink(); }
-            Require(Models.PowerCatalog.All.Count==21 && Config.Enabled,"new catalog apply failed");
+            Require(Models.PowerCatalog.All.Count==24 && Config.Enabled,"new catalog apply failed");
         });
-        UpdateAt(11,"Tiny scales body/collision once and aligns standing and crouched eye heights",()=> {
+        UpdateAt(11,"Tiny scales its body and lowers standing and crouched aim height",()=> {
             Powers.NativeProbePair("teleport","infinite_ammo"); var pawn=Context().Pawn!; var standing=pawn.ViewOffset.Z;
             Powers.NativeProbePair("tiny","infinite_ammo"); var node=pawn.CBodyComponent!.SceneNode!;
             var movement=pawn.MovementServices!.As<CCSPlayer_MovementServices>(); var duck=movement.DuckAmount;
             movement.DuckAmount=0; Powers.Tick(); Powers.PostThink();
             Require(Math.Abs(node.Scale-.5f)<.01 && Math.Abs(node.ClientLocalScale-1)<.01,$"scale={node.Scale}, client={node.ClientLocalScale}");
             Require(Math.Abs(pawn.ViewOffset.Z-standing*.5f)<.01,$"standing eye {pawn.ViewOffset.Z}, baseline {standing}");
-            movement.DuckAmount=1; Powers.Fire(Mode.Boss);
-            Require(Math.Abs(pawn.ViewOffset.Z-23)<.01,"crouch firing height"); movement.DuckAmount=duck;
+            movement.DuckAmount=1; pawn.ViewOffset.Z=46; Powers.Tick(); Powers.PostThink(); Powers.Fire(Mode.Boss);
+            Require(Math.Abs(pawn.ViewOffset.Z-23)<.01,"crouch firing height"); movement.DuckAmount=duck; pawn.ViewOffset.Z=standing;
             Powers.NativeProbePair("teleport","infinite_ammo"); Require(Math.Abs(node.Scale-1)<.01 && Math.Abs(pawn.ViewOffset.Z-standing)<.01,"tiny cleanup");
         });
         UpdateAt(12,"Rapid Fire clears server recoil and camera punch without a global recoil change",()=> {
@@ -85,15 +113,57 @@ public sealed partial class Plugin
             var at=Players.Copy(pawn.AbsOrigin!); Powers.Activate(0,Mode.Boss); Require(Players.Distance(at,pawn.AbsOrigin!)<1,"cooldown bypass");
         });
         UpdateAt(14,"Invisibility starts a safe render-only fade",()=> {
-            Config.InvisibilityQuietDelay=0; Config.InvisibilityFadeDuration=.1f;
+            Config.InvisibilityQuietDelay=0; Config.InvisibilityFadeDuration=.3f;
+            knife=Mode.Boss!.GiveNamedItem<CBasePlayerWeapon>("weapon_knife");
+            carriedBomb=Mode.Boss.GiveNamedItem<CBasePlayerWeapon>("weapon_c4");
             Powers.NativeProbePair("invisibility","infinite_ammo");
+        });
+        UpdateAt(14.15f,"C4 visuals stop transmitting as soon as the carrier starts fading",()=> {
+            Powers.SlowTick();
+            var pawn=Context().Pawn!;
+            Require(pawn.Render.A is >0 and <255 && Effects.HideCarriedBombFrom(Mode.Opponents.First().EntityHandle.Raw,carriedBomb!.Index),
+                $"carrier alpha={pawn.Render.A}, bomb still visible during fade");
         });
         UpdateAt(14.4f,"Silent invisibility hides model/shadow and suppresses engine radar spotting",()=> {
             Powers.SlowTick(); var pawn=Context().Pawn!;
             Require(pawn.Render.A==0 && pawn.ShadowStrength==0 && Powers.IsConcealed(Mode.Boss),"not concealed");
+            Require(knife is { IsValid:true,RenderMode:RenderMode_t.kRenderNone } &&
+                carriedBomb is { IsValid:true,RenderMode:RenderMode_t.kRenderNone } &&
+                (pawn.Effects&(1u<<10))!=0,"carried knife or C4 still drawn");
             pawn.EntitySpottedState.Spotted=true; pawn.EntitySpottedState.SpottedByMask[0]=uint.MaxValue; pawn.EntitySpottedState.SpottedByMask[1]=uint.MaxValue;
             Powers.Tick(); Powers.PostThink();
             Require(!pawn.EntitySpottedState.Spotted && pawn.EntitySpottedState.SpottedByMask[0]==0 && pawn.EntitySpottedState.SpottedByMask[1]==0,"radar leak");
+        });
+        UpdateAt(14.6f,"Concealment filters the carried C4, charm model and linked light for other viewers",()=> {
+            var carrier=Mode.Boss!;
+            var viewer=Mode.Opponents.First();
+            var bomb=carriedBomb!;
+            var light=Utilities.CreateEntityByName<CBaseEntity>("info_particle_system")!;
+            var charm=Utilities.CreateEntityByName<CDynamicProp>("prop_dynamic")!;
+            light.DispatchSpawn();
+            using var keys=new CEntityKeyValues();
+            keys.SetString("model",Context().Pawn!.CBodyComponent!.SceneNode!.GetSkeletonInstance().ModelState.ModelName);
+            keys.SetInt("solid",0);
+            charm.DispatchSpawn(keys);
+            var previousEffect=bomb.EffectEntity.Raw;
+            try
+            {
+                bomb.EffectEntity.Raw=light.EntityHandle.Raw;
+                charm.AcceptInput("SetParent",bomb,charm,"!activator");
+                Powers.SlowTick();
+                var other=viewer.EntityHandle.Raw;
+                var self=carrier.EntityHandle.Raw;
+                Require(Effects.HideCarriedBombFrom(other,bomb.Index) && Effects.HideCarriedBombFrom(other,light.Index) &&
+                    Effects.HideCarriedBombFrom(other,charm.Index),"carried C4, charm or light could still reach another viewer");
+                Require(!Effects.HideCarriedBombFrom(self,bomb.Index) && !Effects.HideCarriedBombFrom(self,light.Index) &&
+                    !Effects.HideCarriedBombFrom(other,Context().Pawn!.Index),"concealment removed the owner inventory or player pawn");
+            }
+            finally
+            {
+                bomb.EffectEntity.Raw=previousEffect;
+                charm.Remove();
+                light.Remove();
+            }
         });
         UpdateAt(15,"A planted bomb and unrelated owner-linked entities remain visible",()=> {
             var pawn=Context().Pawn!;
@@ -103,9 +173,12 @@ public sealed partial class Plugin
             {
                 bomb.BombTicking=false; bomb.BombDefused=true;
                 Powers.SlowTick();
-                Require(!Effects.AttachedEntities(pawn).Any(e=>e.EntityHandle.Raw==bomb.EntityHandle.Raw) && bomb.Render.A==255,"planted bomb hidden");
+                Require(!Effects.AttachedEntities(pawn).Any(e=>e.EntityHandle.Raw==bomb.EntityHandle.Raw) && bomb.Render.A==255 &&
+                    !Effects.HideCarriedBombFrom(Mode.Opponents.First().EntityHandle.Raw,bomb.Index),"planted bomb hidden");
                 new EventBombPlanted(true) { Userid=Mode.Boss }.FireEvent(false);
-                Require(pawn.Render.A==255 && !Powers.IsConcealed(Mode.Boss),"plant did not reveal");
+                Require(pawn.Render.A==255 && !Powers.IsConcealed(Mode.Boss) &&
+                    !Effects.HideCarriedBombFrom(Mode.Opponents.First().EntityHandle.Raw,carriedBomb!.Index),"plant did not reveal");
+                Require(knife?.RenderMode!=RenderMode_t.kRenderNone && carriedBomb?.RenderMode!=RenderMode_t.kRenderNone,"carried model did not restore");
             }
             finally { if (bomb.IsValid) bomb.Remove(); }
         });
@@ -188,7 +261,100 @@ public sealed partial class Plugin
             Powers.NativeProbePair("teleport","infinite_ammo");
             Require(!Utilities.FindAllEntitiesByDesignerName<CInferno>("inferno").Any(),"owned fire leaked after cleanup");
         });
-        AddTimer(41,FinishUpdateProbe,TimerFlags.STOP_ON_MAPCHANGE);
+        UpdateAt(41,"Cluster Grenade adds four copies and preserves the original velocity",()=> {
+            Powers.NativeProbePair("cluster_grenade","infinite_ammo");
+            var pawn=Context().Pawn!; var feet=pawn.AbsOrigin!;
+            var original=GrenadeFactory.Create("hegrenade_projectile",new(feet.X,feet.Y,feet.Z+72),new(200,0,100),pawn)!;
+            try
+            {
+                var velocity=Players.Copy(original.AbsVelocity);
+                Powers.Projectile(original); Powers.Projectile(original);
+                Require(((ClusterGrenade)Powers.Active[0]).ChildCount==4,"wrong copy count");
+                Require(Players.Distance(velocity,original.AbsVelocity)<.01f,"original trajectory altered");
+            }
+            finally { Powers.NativeProbePair("teleport","infinite_ammo"); original.Remove(); }
+        });
+        UpdateAt(42,"Random Swap trades the owner's location with one other living player",()=> {
+            Powers.NativeProbePair("random_swap","infinite_ammo");
+            var owner=Context().Pawn!; var origin=Players.Copy(owner.AbsOrigin!);
+            var candidates=Mode.Eligible().Select(Players.AlivePawn).OfType<CCSPlayerPawn>()
+                .Where(p=>p.Handle!=owner.Handle).Select(p=>(pawn:p,origin:Players.Copy(p.AbsOrigin!))).ToArray();
+            Powers.Activate(0,Mode.Boss);
+            Require(candidates.Count(p=>Players.Distance(p.pawn.AbsOrigin!,origin)<.5f &&
+                Players.Distance(owner.AbsOrigin!,p.origin)<.5f)==1 &&
+                Powers.Loadout!.Remaining("random_swap",Server.CurrentTime)>19,"swap or cooldown failed");
+        });
+        CCSPlayerPawn? wallbangVictim=null;
+        float wallbangDamage=0;
+        UpdateAt(43,"Unlimited Wallbang traces a bullet ray through a solid map wall",()=> {
+            Powers.NativeProbePair("unlimited_wallbang","infinite_ammo");
+            var player=Mode.Boss!; var shooter=Context().Pawn!;
+            var victim=Players.AlivePawn(Mode.Opponents.First(p=>Players.AlivePawn(p) is not null))!;
+            var rifle=player.GiveNamedItem<CBasePlayerWeapon>("weapon_ak47")!;
+            shooter.WeaponServices!.ActiveWeapon.Raw=rifle.EntityHandle.Raw;
+            var tSpawns=Utilities.FindAllEntitiesByDesignerName<CBaseEntity>("info_player_terrorist");
+            var ctSpawns=Utilities.FindAllEntitiesByDesignerName<CBaseEntity>("info_player_counterterrorist");
+            var pair=(from t in tSpawns from ct in ctSpawns
+                let start=new Vector(t.AbsOrigin!.X,t.AbsOrigin.Y,t.AbsOrigin.Z+shooter.ViewOffset.Z)
+                let end=new Vector(ct.AbsOrigin!.X,ct.AbsOrigin.Y,ct.AbsOrigin.Z+40)
+                let trace=GameTrace.TraceEndShape(start,end,shooter,new() { InteractsWith=Masks.ShotBrushOnly })
+                where trace.DidHit() && !trace.IsAllSolid && trace.Fraction is >.04f and <.85f
+                select (origin:t.AbsOrigin,destination:ct.AbsOrigin)).First();
+            shooter.Teleport(Players.Copy(pair.origin!),null,new Vector(0,0,0));
+            victim.Teleport(Players.Copy(pair.destination!),null,new Vector(0,0,0));
+            victim.Health=100; victim.ArmorValue=0;
+            wallbangVictim=victim;
+        });
+        UpdateAt(43.5f,"Unlimited Wallbang uses the shot's actual impact direction",()=> {
+            var shooter=Context().Pawn!; var origin=shooter.AbsOrigin!;
+            var start=new Vector(origin.X,origin.Y,origin.Z+shooter.ViewOffset.Z);
+            var destination=wallbangVictim!.AbsOrigin!;
+            var end=new Vector(destination.X,destination.Y,destination.Z+40);
+            var world=GameTrace.TraceEndShape(start,end,shooter,new() { InteractsWith=Masks.ShotBrushOnly });
+            Require(world.DidHit() && !world.IsAllSolid,"wall does not block the shot");
+            var hit=GameTrace.TraceEndShape(start,end,shooter,new() { InteractsWith=Contents.Player|Contents.Hitbox });
+            Require(hit.HitEntity().Handle==wallbangVictim.Handle,"ray does not reach the intended victim");
+            var weapon=shooter.WeaponServices!.ActiveWeapon.Value!.As<CCSWeaponBase>().VData!;
+            var rangeDamage=UnlimitedWallbang.DamageAtRange(weapon.Damage,weapon.RangeModifier,Players.Distance(start,hit.EndPos));
+            wallbangDamage=Models.BulletHealthDamage.Estimate(rangeDamage,UnlimitedWallbang.HitGroup(hit),weapon.HeadshotMultiplier,1,0,false,weapon.ArmorRatio);
+            for (var i=0;i<2;i++) Powers.Impact(world.EndPos.X,world.EndPos.Y,world.EndPos.Z,Mode.Boss);
+        });
+        UpdateAt(44,"A blocked rifle shot deals full range-adjusted damage once",()=> {
+            Require(wallbangVictim is not null && Math.Abs(100-wallbangVictim.Health-wallbangDamage)<2,
+                $"expected about {wallbangDamage} damage, got {100-wallbangVictim?.Health}");
+        });
+        UpdateAt(44.1f,"Wallbang fallback uses normal headshot and armor scaling",()=> {
+            var victim=wallbangVictim!; var target=Players.Controller(victim)!.EntityHandle.Raw;
+            var source=Mode.Boss!.EntityHandle.Raw;
+            var weapon=Context().Pawn!.WeaponServices!.ActiveWeapon.Value!.As<CCSWeaponBase>().VData!;
+            victim.Health=100; victim.ArmorValue=0;
+            Damage.DealBullet(target,source,10,HitGroup_t.HITGROUP_HEAD);
+            var head=100-victim.Health;
+            victim.Health=100; victim.ArmorValue=100;
+            Damage.DealBullet(target,source,40,HitGroup_t.HITGROUP_CHEST);
+            var chest=100-victim.Health; var armor=100-victim.ArmorValue;
+            victim.Health=100; victim.ArmorValue=0;
+            Require(Math.Abs(head-10*weapon.HeadshotMultiplier)<2 && Math.Abs(chest-20*weapon.ArmorRatio)<2 && armor is 4 or 5,
+                $"head damage={head}, armored chest damage={chest}, armor spent={armor}, armor ratio={weapon.ArmorRatio}");
+        });
+        UpdateAt(44.3f,"Sandevistan still freezes opponents without spawning a screen fade",()=> {
+            var fades=0;
+            void ObserveFade(CEntityInstance entity) { if (entity.DesignerName=="env_fade") fades++; }
+            var power=new Sandevistan(); var context=Context();
+            RegisterListener<Listeners.OnEntitySpawned>(ObserveFade);
+            try
+            {
+                Require(power.Activate(context) && power.FrozenCount>0,"opponents were not frozen");
+                power.Cleanup(context);
+                Require(fades==0,"Sandevistan spawned a screen fade");
+            }
+            finally
+            {
+                power.Cleanup(context);
+                RemoveListener<Listeners.OnEntitySpawned>(ObserveFade);
+            }
+        });
+        AddTimer(45,FinishUpdateProbe,TimerFlags.STOP_ON_MAPCHANGE);
     }
     private void ScheduleDeathmatchUpdateProbe()
     {
@@ -200,7 +366,7 @@ public sealed partial class Plugin
         UpdateAt(10,"Native deathmatch gives every active player a private pair without a T boss",()=> {
             Require(Mode.IsDeathmatch && Mode.Live && Mode.Boss is null,"native deathmatch not active");
             Require(Mode.Eligible().Count>=2 && Mode.Eligible().All(p=>Powers.GetLoadout(p)?.Powers.Count==2),"missing deathmatch loadouts");
-            foreach (var entry in Config.Powers) entry.Value.Enabled=entry.Key is "teleport" or "infinite_ammo" or "low_gravity";
+            foreach (var entry in Config.Powers) entry.Value.Enabled=entry.Key is "teleport" or "infinite_ammo" or "decoy_clone";
             foreach (var p in Mode.Eligible()) Logger.LogInformation("DM PROBE {Player}: hp={HP}, life={Life}, pos={Position}",p.PlayerName,p.PlayerPawn.Value?.Health,p.PlayerPawn.Value?.LifeState,p.PlayerPawn.Value?.AbsOrigin);
             var player=Mode.Eligible().First(p=>Players.AlivePawn(p) is not null); playerRaw=player.EntityHandle.Raw;
             Powers.NativeProbePair("teleport","infinite_ammo",player:player);

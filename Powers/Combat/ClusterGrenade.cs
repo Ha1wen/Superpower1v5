@@ -6,6 +6,7 @@ namespace Superpower1v5.Powers.Combat;
 
 public sealed class ClusterGrenade() : Power("cluster_grenade")
 {
+    private static readonly float[] Spread=[-12,-4,4,12];
     private readonly HashSet<uint> _processed=[];
     private readonly HashSet<uint> _children=[];
     public int ChildCount => _children.Count;
@@ -14,15 +15,14 @@ public sealed class ClusterGrenade() : Power("cluster_grenade")
         if (context.Pawn is not { } owner || projectile.Thrower.Raw!=owner.EntityHandle.Raw ||
             !GrenadeFactory.Supported(projectile.DesignerName) || !_processed.Add(projectile.EntityHandle.Raw) || _children.Contains(projectile.EntityHandle.Raw)) return;
         Prune(context);
-        if (_children.Count+3>Settings(context).MaxEntities) { context.Tell("Cluster Grenade: too many active copies."); return; }
+        if (_children.Count+Spread.Length>Settings(context).MaxEntities) { context.Tell("Cluster Grenade: too many active copies."); return; }
         if (projectile.AbsOrigin is not { } origin) return;
         var velocity=Players.Copy(projectile.AbsVelocity);
-        foreach (var degrees in new[] { -12f,-4f,4f,12f })
+        var item=projectile.DesignerName=="molotov_projectile" && projectile.As<CMolotovProjectile>().IsIncGrenade ? (ushort)48 : projectile.ItemIndex;
+        foreach (var degrees in Spread)
         {
             var angle=degrees*MathF.PI/180;
             var split=new Vector(velocity.X*MathF.Cos(angle)-velocity.Y*MathF.Sin(angle),velocity.X*MathF.Sin(angle)+velocity.Y*MathF.Cos(angle),velocity.Z);
-            if (degrees==-12) { projectile.Teleport(null,null,split); continue; }
-            var item=projectile.DesignerName=="molotov_projectile" && projectile.As<CMolotovProjectile>().IsIncGrenade ? (ushort)48 : projectile.ItemIndex;
             var copy=GrenadeFactory.Create(projectile.DesignerName,Players.Copy(origin),split,owner,item);
             if (copy is null) continue;
             _children.Add(copy.EntityHandle.Raw); _processed.Add(copy.EntityHandle.Raw); context.Plugin.TrackEntity(copy.EntityHandle.Raw);

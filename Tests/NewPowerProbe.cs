@@ -17,7 +17,7 @@ public sealed partial class Plugin
 {
     private void ScheduleNewPowerTests()
     {
-        AddTimer(12,()=>Probe("All 21 powers apply; six bots retain one boss and two powers",()=> {
+        AddTimer(12,()=>Probe("All 24 powers apply; six bots retain one boss and two powers",()=> {
             Require(Mode.Live && Mode.Eligible().Count==6 && Mode.Opponents.Count()==5,"roster");
             foreach (var power in PowerCatalog.All)
             {
@@ -37,7 +37,7 @@ public sealed partial class Plugin
                 Powers.NativeProbePair("teleport","infinite_ammo");
             }),TimerFlags.STOP_ON_MAPCHANGE);
         }),TimerFlags.STOP_ON_MAPCHANGE);
-        AddTimer(12.4f,()=>Probe("Tiny shrinks model, view offset, and native collision bounds",()=> {
+        AddTimer(12.4f,()=>Probe("Tiny shrinks model and native collision bounds",()=> {
             var pawn=Players.AlivePawn(Mode.Boss)!; var node=pawn.CBodyComponent!.SceneNode!;
             var scale=node.Scale; var eye=pawn.ViewOffset.Z; var width=pawn.Collision.Maxs.X-pawn.Collision.Mins.X;
             GameTrace.GetEntityWorldSpaceAABB(pawn,out var beforeMin,out var beforeMax);
@@ -46,7 +46,7 @@ public sealed partial class Plugin
                 try
                 {
                     Require(Math.Abs(node.Scale-scale*.5f)<.01,"model scale");
-                    Require(pawn.ViewOffset.Z<eye*.7f,"view height");
+                    Require(Math.Abs(pawn.ViewOffset.Z-eye)<1,"view height");
                     Require(pawn.Collision.Maxs.X-pawn.Collision.Mins.X<width*.7f,"collision width");
                     GameTrace.GetEntityWorldSpaceAABB(pawn,out var afterMin,out var afterMax);
                     Require(afterMax.X-afterMin.X<(beforeMax.X-beforeMin.X)*.75f,$"world bounds before {beforeMax.X-beforeMin.X}, after {afterMax.X-afterMin.X}");

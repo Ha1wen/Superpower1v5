@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>Superpower1v5</AssemblyName>
-    <Version>1.8.0</Version>
+    <Version>1.9.0</Version>
     <CounterStrikeSharpPath Condition="'$(CounterStrikeSharpPath)' == ''">$(MSBuildThisFileDirectory)..\..\game\csgo\addons\counterstrikesharp\api</CounterStrikeSharpPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(ServerSmoke)' == 'true'">
@@ -21,6 +21,9 @@
     <Compile Include="Tests\GunRewindProbe.cs" Condition="'$(ServerSmoke)' == 'true'" />
     <Compile Include="Tests\RoundOptionsProbe.cs" Condition="'$(ServerSmoke)' == 'true'" />
     <Compile Include="Tests\AbilityUpdateProbe.cs" Condition="'$(ServerSmoke)' == 'true'" />
+    <Compile Include="Tests\TinyProbe.cs" Condition="'$(ServerSmoke)' == 'true'" />
+    <Compile Include="Tests\ThunderProbe.cs" Condition="'$(ServerSmoke)' == 'true'" />
+    <Compile Include="Tests\CloneProbe.cs" Condition="'$(ServerSmoke)' == 'true'" />
     <Reference Include="CounterStrikeSharp.API">
       <HintPath>$(CounterStrikeSharpPath)\CounterStrikeSharp.API.dll</HintPath>
       <Private>false</Private>

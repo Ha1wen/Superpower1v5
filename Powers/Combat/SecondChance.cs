@@ -42,7 +42,7 @@ public sealed class SecondChance() : Power("second_chance")
 #if SERVER_SMOKE
         LastRestoredFrame=frame;
 #endif
-        pawn.Health=Math.Clamp(frame?.Health ?? (int)Settings(c).Strength,1,pawn.MaxHealth);
+        pawn.Health=frame is not null ? Math.Max(1,frame.Health) : Math.Clamp((int)Settings(c).Strength,1,pawn.MaxHealth);
         if (frame is not null)
         {
             pawn.ArmorValue=Math.Clamp(frame.Armor,0,100);

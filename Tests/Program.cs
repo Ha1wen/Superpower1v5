@@ -23,8 +23,8 @@ void Check(bool success,string message) { if (!success) throw new Exception(mess
 void Reject(Action action) { try { action(); } catch (ArgumentException) { return; } catch (InvalidOperationException) { return; } throw new Exception("Invalid input was accepted."); }
 PluginConfig Default() { var c=new PluginConfig(); c.Validate(); return c; }
 
-tests.Add(("All 21 powers have unique IDs and concrete implementations",()=> {
-    Check(PowerCatalog.All.Count==21 && PowerCatalog.All.Select(p=>p.Id).Distinct().Count()==21,"Catalog count or duplicate IDs");
+tests.Add(("All 24 powers have unique IDs and concrete implementations",()=> {
+    Check(PowerCatalog.All.Count==24 && PowerCatalog.All.Select(p=>p.Id).Distinct().Count()==24,"Catalog count or duplicate IDs");
     foreach (var p in PowerCatalog.All) Check(PowerManager.Create(p.Id).Id==p.Id,"Factory missing "+p.Id);
 }));
 tests.Add(("Mode configuration repairs invalid and null input",()=> {
@@ -32,7 +32,7 @@ tests.Add(("Mode configuration repairs invalid and null input",()=> {
         MaxOpponents=88,SuperpoweredPlayerTeam="bogus",Powers=null!,PowerBlacklist=null! };
     c.Validate();
     Check(c.NormalHealth==100 && c.SuperpoweredPlayerCount==1 && c.PowersPerRound==2 && !c.AllowDuplicatePowers,"Mode invariant violated");
-    Check(c.MaxOpponents==5 && c.SuperpoweredPlayerTeam=="T" && c.Powers.Count==21,"Defaults not repaired");
+    Check(c.MaxOpponents==5 && c.SuperpoweredPlayerTeam=="T" && c.Powers.Count==24,"Defaults not repaired");
     c.Powers["teleport"].Distance=float.NaN; c.Powers["rapid_fire"].Strength=99; c.Validate();
     Check(c.Powers["teleport"].Distance==0 && c.Powers["rapid_fire"].Strength==1.6f,"Unsafe tuning accepted");
 }));
@@ -48,8 +48,8 @@ tests.Add(("50,000 rounds give every power equal probability in both slots",()=>
     for (var i=0;i<n;i++) { var pair=s.SelectPair(c); first[pair[0].Id]++; second[pair[1].Id]++; }
     foreach (var id in first.Keys)
     {
-        Check(Math.Abs((double)first[id]/n-1.0/21)<.005,$"First slot biased: {id}: {first[id]}");
-        Check(Math.Abs((double)second[id]/n-1.0/21)<.005,$"Second slot biased: {id}: {second[id]}");
+        Check(Math.Abs((double)first[id]/n-1.0/PowerCatalog.All.Count)<.005,$"First slot biased: {id}: {first[id]}");
+        Check(Math.Abs((double)second[id]/n-1.0/PowerCatalog.All.Count)<.005,$"Second slot biased: {id}: {second[id]}");
     }
 }));
 tests.Add(("Blacklists, disabled powers and insufficient pools are safe",()=> {
@@ -58,7 +58,7 @@ tests.Add(("Blacklists, disabled powers and insufficient pools are safe",()=> {
     for (var i=0;i<1000;i++) Check(s.SelectPair(c).All(c.IsAvailable),"Unavailable power selected");
     foreach (var p in c.Powers.Values) p.Enabled=false;
     Reject(()=>s.SelectPair(c)); c.Powers["infinite_ammo"].Enabled=true; Reject(()=>s.SelectPair(c));
-    c.Powers["low_gravity"].Enabled=true; Check(s.SelectPair(c).Count==2,"Two-power pool rejected");
+    c.Powers["decoy_clone"].Enabled=true; Check(s.SelectPair(c).Count==2,"Two-power pool rejected");
 }));
 tests.Add(("Compatibility is symmetric and excludes duplicate IDs",()=> {
     var a=new PowerDefinition("a","A","",PowerKind.Passive,["b"]);
@@ -107,19 +107,19 @@ tests.Add(("Every administrator entry point requires CounterStrikeSharp permissi
     Check(admin.Count==12,"Missing admin commands");
     foreach (var m in admin) Check(m.GetCustomAttributes<RequiresPermissions>().Any(),"Unprotected command: "+m.Name);
 }));
-tests.Add(("Default configuration round-trips all 21 power settings",()=> {
+tests.Add(("Default configuration round-trips all 24 power settings",()=> {
     var c=Default(); var json=JsonSerializer.Serialize(c); var copy=JsonSerializer.Deserialize<PluginConfig>(json)!; copy.Validate();
-    Check(copy.Powers.Count==21 && copy.Powers["vampirism"].Strength==1 && copy.Powers["teleport"].Cooldown==15,"Config round-trip failure");
+    Check(copy.Powers.Count==24 && copy.Powers["blood_pact"].Strength==1 && copy.Powers["teleport"].Cooldown==15,"Config round-trip failure");
 }));
 tests.Add(("Removed powers cannot be selected, assigned, or retained in migrated config",()=> {
     var retired=new[] { "super_jump","double_jump","regeneration","damage_resistance","glass_cannon","freeze_shot","damage_reflection","lucky_shot","randomizer","yoru_flash" };
     var c=Default(); c.Version=1;
     foreach (var id in retired) { c.Powers[id]=new(); Reject(()=>PowerManager.Create(id)); }
-    c.Powers["super_speed"].Strength=1.5f; c.Powers["vampirism"].Strength=.3f;
+    c.Powers["super_speed"].Strength=1.5f; c.Powers["blood_pact"].Strength=.3f;
     c.Powers["teleport"].Distance=450; c.Powers["teleport"].Cooldown=7; c.Powers["explosive_bullets"].Strength=18;
     c.Validate();
     Check(retired.All(id=>!c.Powers.ContainsKey(id) && !PowerCatalog.All.Any(p=>p.Id==id)),"Removed power survived");
-    Check(c.Version==8 && c.Powers["super_speed"].Strength==2.5f && c.Powers["vampirism"].Strength==1 && c.Powers["explosive_bullets"].Strength==55,"Balance migration failed");
+    Check(c.Version==11 && c.Powers["super_speed"].Strength==2.5f && c.Powers["blood_pact"].Strength==1 && c.Powers["explosive_bullets"].Strength==80,"Balance migration failed");
     Check(c.Powers["teleport"].Distance==0 && c.Powers["teleport"].Cooldown==7,"Migration lost customized cooldown");
 }));
 tests.Add(("Unlimited teleport uses a finite world trace with no old 1200-unit clamp",()=> {
@@ -155,7 +155,7 @@ tests.Add(("Version 2 migration adds retained new powers and preserves customize
     var added=new[] { "bhop","sandevistan","pyromaniac","random_explosion","tiny" };
     foreach (var id in added) c.Powers.Remove(id);
     c.Powers["super_speed"].Strength=3; c.Powers["teleport"].Cooldown=8; c.Validate();
-    Check(c.Version==8 && c.Powers.Count==21 && added.All(c.Powers.ContainsKey),"Missing new powers");
+    Check(c.Version==11 && c.Powers.Count==24 && added.All(c.Powers.ContainsKey),"Missing new powers");
     Check(c.Powers["super_speed"].Strength==3 && c.Powers["teleport"].Cooldown==8,"Customized settings changed");
     Check(c.Powers["sandevistan"].Duration==10 && c.Powers["random_explosion"].Duration==0 && c.Powers["random_explosion"].Cooldown==20,"Requested durations changed");
 }));
@@ -181,7 +181,7 @@ tests.Add(("Version 3 JSON drops rarities and Yoru while preserving unrelated tu
      "invisibility":{"Duration":5,"Cooldown":25,"Strength":40},"wall_vision":{"Duration":6,"Cooldown":25}}}
     """;
     var c=JsonSerializer.Deserialize<PluginConfig>(old)!; c.Validate(); var json=JsonSerializer.Serialize(c);
-    Check(c.Version==8 && c.Powers.Count==21 && !json.Contains("RarityWeights") && !json.Contains("yoru_flash"),"Removed configuration survived");
+    Check(c.Version==11 && c.Powers.Count==24 && !json.Contains("RarityWeights") && !json.Contains("yoru_flash"),"Removed configuration survived");
     Check(c.Powers["super_speed"].Strength==3 && c.Powers["teleport"].Cooldown==8 && c.Powers["invisibility"].Strength==40,"Customized settings lost");
     Check(typeof(PowerDefinition).GetProperty("Rarity") is null,"Rarity remains in the catalog model");
 }));
@@ -190,7 +190,7 @@ tests.Add(("Version 4 migration makes explosions immediate with a 20-second cool
     c.Powers["random_explosion"].Duration=20; c.Powers["random_explosion"].Cooldown=45;
     c.Powers["random_explosion"].Strength=600; c.Powers["teleport"].Cooldown=8;
     c.Validate();
-    Check(c.Version==8 && c.Powers["random_explosion"].Duration==0 && c.Powers["random_explosion"].Cooldown==20,"Old fuse/cooldown survived");
+    Check(c.Version==11 && c.Powers["random_explosion"].Duration==0 && c.Powers["random_explosion"].Cooldown==20,"Old fuse/cooldown survived");
     Check(c.Powers["random_explosion"].Strength==600 && c.Powers["teleport"].Cooldown==8,"Other tuning changed");
     var loadout=new RoundLoadout([PowerCatalog.Get("random_explosion"),PowerCatalog.Get("infinite_ammo")]);
     loadout.StartCooldown("random_explosion",10,c.Powers["random_explosion"].Cooldown);
@@ -206,8 +206,8 @@ tests.Add(("Version 5 migration adds Juggernaut and Cluster Grenade and preserve
     var c=Default(); c.Version=5; c.RotateSuperpoweredPlayer=true; c.SuperpoweredPlayerTeam="CT";
     c.Powers.Remove("juggernaut"); c.Powers.Remove("cluster_grenade"); c.Powers["second_chance"].Duration=.1f;
     c.Powers["teleport"].Cooldown=8; c.Validate();
-    Check(c.Version==8 && c.Powers.Count==21 && c.SuperpoweredPlayerTeam=="T" && c.RotateSuperpoweredPlayer,"team/config migration");
-    Check(c.Powers["juggernaut"].Strength==500 && c.Powers["cluster_grenade"].Strength==4 && c.Powers["second_chance"].Duration==3,"new settings");
+    Check(c.Version==11 && c.Powers.Count==24 && c.SuperpoweredPlayerTeam=="T" && c.RotateSuperpoweredPlayer,"team/config migration");
+    Check(c.Powers["juggernaut"].Strength==500 && c.Powers["cluster_grenade"].Strength==5 && c.Powers["second_chance"].Duration==3,"new settings");
     Check(c.Powers["teleport"].Cooldown==8,"unrelated tuning changed");
 }));
 tests.Add(("Rewind picks a historical frame near three seconds and supports short histories",()=> {
@@ -287,14 +287,42 @@ tests.Add(("Version 8 adds new powers while preserving old tuning and validates 
     var config=Default(); config.Version=7;
     foreach (var id in new[] { "infinite_jump","random_teleport","forcefield" }) config.Powers.Remove(id);
     config.Powers["teleport"].Cooldown=9; config.Validate();
-    Check(config.Version==8 && config.Powers.Count==21 && config.Powers["teleport"].Cooldown==9,"Migration lost old tuning");
+    Check(config.Version==11 && config.Powers.Count==24 && config.Powers["teleport"].Cooldown==9,"Migration lost old tuning");
     Check(config.Powers["random_teleport"].Cooldown==20 && config.Powers["forcefield"].Cooldown==35 && config.Powers["forcefield"].Duration==10,"New power defaults");
     config.Powers["forcefield"].Cooldown=0; config.Powers["forcefield"].Duration=99; config.Powers["infinite_jump"].Strength=float.NaN; config.Validate();
     Check(config.Powers["forcefield"].Cooldown==35 && config.Powers["forcefield"].Duration==10 && config.Powers["infinite_jump"].Strength==301.99f,"Unsafe new power settings");
 }));
-tests.Add(("Tiny camera height scales once and follows crouch interpolation",()=> {
-    Check(PlayerScale.EyeHeight(64,0,.5f)==32 && PlayerScale.EyeHeight(64,1,.5f)==23,"Wrong tiny standing/crouch firing height");
-    Check(PlayerScale.EyeHeight(64,.5f,.5f)==27.5f && PlayerScale.EyeHeight(64,2,1)==46,"Crouch interpolation or clamp");
+tests.Add(("Version 9 upgrades stock blast values and preserves custom tuning",()=> {
+    var stock=Default(); stock.Version=8;
+    stock.Powers["explosive_bullets"].Strength=55; stock.Powers["explosive_bullets"].Radius=180;
+    stock.Powers["cluster_grenade"].Strength=4;
+    stock.Powers.Remove("random_swap"); stock.Powers.Remove("unlimited_wallbang");
+    stock.Validate();
+    Check(stock.Version==11 && stock.Powers["explosive_bullets"].Strength==80 && stock.Powers["explosive_bullets"].Radius==250,"Stock blast upgrade");
+    Check(stock.Powers["cluster_grenade"].Strength==5 && stock.Powers["random_swap"].Cooldown==20 &&
+        stock.Powers.ContainsKey("unlimited_wallbang"),"New power defaults");
+    var custom=Default(); custom.Version=8;
+    custom.Powers["explosive_bullets"].Strength=62; custom.Powers["explosive_bullets"].Radius=200;
+    custom.Validate();
+    Check(custom.Powers["explosive_bullets"].Strength==62 && custom.Powers["explosive_bullets"].Radius==200,"Custom blast settings lost");
+}));
+tests.Add(("Version 10 retires Low Gravity and preserves Blood Pact settings and blacklists",()=> {
+    var config=JsonSerializer.Deserialize<PluginConfig>("""
+        {"ConfigVersion":9,"PowerBlacklist":["VAMPIRISM","low_gravity"],"Powers":{"vampirism":{"Enabled":false,"Strength":0.35},"low_gravity":{}}}
+        """)!;
+    config.Validate(); config.Validate();
+    Check(!config.Powers.ContainsKey("vampirism") && !config.Powers.ContainsKey("low_gravity"),"Retired entries survived migration");
+    Check(config.PowerBlacklist.SequenceEqual(["blood_pact"]) && !config.Powers["blood_pact"].Enabled &&
+        config.Powers["blood_pact"].Strength==.35f,"Blood Pact lost old settings");
+    Check(config.Powers["decoy_clone"].Duration==10 && config.Powers["decoy_clone"].Cooldown==20,"Unexpected clone defaults");
+    Reject(()=>PowerManager.Create("low_gravity"));
+}));
+tests.Add(("Version 11 adds Thunder God with a ten-second Zeus recharge",()=> {
+    var config=Default(); config.Version=10; config.Powers.Remove("thunder_god");
+    config.Powers["random_swap"].Cooldown=27; config.Validate();
+    Check(config.Version==11 && config.Powers["thunder_god"].Cooldown==10 && config.Powers["random_swap"].Cooldown==27,"Thunder God migration");
+    config.Powers["thunder_god"].Cooldown=0; config.Validate();
+    Check(config.Powers["thunder_god"].Cooldown==10 && PowerManager.Create("thunder_god").Definition.Kind==PowerKind.Triggered,"Thunder God defaults");
 }));
 var failed=0;
 foreach (var (name,action) in tests)

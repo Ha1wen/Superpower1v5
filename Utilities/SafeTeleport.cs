@@ -52,6 +52,42 @@ public static class SafeTeleport
         return !ray.IsAllSolid && ray.Fraction >= .97f;
     }
 
+    public static bool TrySwap(CCSPlayerPawn first, CCSPlayerPawn second)
+    {
+        if (first.EntityHandle.Raw==second.EntityHandle.Raw ||
+            first.AbsOrigin is not { } firstOrigin || second.AbsOrigin is not { } secondOrigin) return false;
+        var firstPosition=Players.Copy(firstOrigin);
+        var secondPosition=Players.Copy(secondOrigin);
+        if (Players.Distance(firstPosition,secondPosition)<.1f ||
+            !CanSwapTo(first,second,secondPosition) || !CanSwapTo(second,first,firstPosition)) return false;
+        first.Teleport(secondPosition,null,new Vector(0,0,0));
+        second.Teleport(firstPosition,null,new Vector(0,0,0));
+        return true;
+    }
+
+    private static bool CanSwapTo(CCSPlayerPawn pawn,CCSPlayerPawn outgoing,Vector position)
+    {
+        // The destination's current occupant leaves in the same update.
+        var mins=pawn.Collision.Mins;
+        var maxs=pawn.Collision.Maxs;
+        var world=GameTrace.TraceHullShape(position,position,mins,maxs,pawn,new() { InteractsWith=Masks.PlayerSolidBrushOnly });
+        if (world.DidHit()) return false;
+        foreach (var player in Utilities.GetPlayers())
+        {
+            if (Players.AlivePawn(player) is not { } other || other.Handle==pawn.Handle || other.Handle==outgoing.Handle ||
+                other.AbsOrigin is not { } origin) continue;
+            var otherMins=other.Collision.Mins;
+            var otherMaxs=other.Collision.Maxs;
+            if (Overlaps(position.X,mins.X,maxs.X,origin.X,otherMins.X,otherMaxs.X) &&
+                Overlaps(position.Y,mins.Y,maxs.Y,origin.Y,otherMins.Y,otherMaxs.Y) &&
+                Overlaps(position.Z,mins.Z,maxs.Z,origin.Z,otherMins.Z,otherMaxs.Z)) return false;
+        }
+        return true;
+    }
+
+    private static bool Overlaps(float a,float minA,float maxA,float b,float minB,float maxB) =>
+        a+minA<b+maxB && b+minB<a+maxA;
+
     public static bool TryRandom(CCSPlayerPawn pawn)
     {
         if (pawn.AbsOrigin is not { } origin) return false;

@@ -11,6 +11,7 @@ public sealed class Invisibility() : Power("invisibility")
     private readonly SilenceFade _fade=new();
     private byte _alpha=255;
     private bool _grounded;
+    private uint _activeWeapon;
     public override bool IsActive => _active;
     public bool Concealed => _active && _alpha==0;
     public override string? Status => _alpha==0 ? "hidden" : _alpha==255 ? "visible (sound)" : "fading";
@@ -33,6 +34,9 @@ public sealed class Invisibility() : Power("invisibility")
         if (weapon?.InReload==true || pawn.IsDefusing || planting || grounded && !_grounded ||
             grounded && speed>140 && !QuietMovement(player,pawn)) Noise(c);
         _grounded=grounded;
+        var weaponRaw=weapon?.EntityHandle.Raw ?? uint.MaxValue;
+        if (_alpha<255 && _activeWeapon!=weaponRaw) UpdateModels(c,pawn,player);
+        _activeWeapon=weaponRaw;
         if (Concealed) Managers.EffectsManager.SuppressRadar(pawn);
     }
     public override void PostThink(PowerContext c) { if (Concealed && c.Pawn is { } pawn) Managers.EffectsManager.SuppressRadar(pawn); }
@@ -41,24 +45,19 @@ public sealed class Invisibility() : Power("invisibility")
         if (!_active || c.Pawn is not { } p || c.Boss is not { } player) { Cleanup(c); return; }
         _alpha=_fade.Alpha(c.Now,c.Plugin.Config.InvisibilityQuietDelay,c.Plugin.Config.InvisibilityFadeDuration);
         if (_alpha==255) return;
+        UpdateModels(c,p,player);
+    }
+    private void UpdateModels(PowerContext c,CCSPlayerPawn p,CCSPlayerController player)
+    {
         var attached=c.Effects.AttachedEntities(p);
         var colors=new HashSet<uint>();
         foreach (var entity in attached)
         {
-            // The owner's first-person arms and weapon stay usable.
-            if (entity.DesignerName.Contains("viewmodel",StringComparison.Ordinal)) continue;
-            // Cast only known model classes. Other attachments are still excluded at
-            // full concealment, without reading model fields from non-model entities.
-            var name=entity.DesignerName;
-            if (name!="player" && !name.StartsWith("weapon_",StringComparison.Ordinal) &&
-                !name.StartsWith("prop_",StringComparison.Ordinal) && !name.Contains("wearable",StringComparison.Ordinal)) continue;
-            var model=entity.As<CBaseModelEntity>();
-            if (!model.IsValid) continue;
-            c.Effects.Fade(model,_alpha); colors.Add(entity.EntityHandle.Raw);
+            c.Effects.Fade(entity,_alpha); colors.Add(entity.EntityHandle.Raw);
         }
         c.Effects.RestoreColorsExcept(colors);
-        if (_alpha==0) { c.Effects.Conceal(p,player,attached); Managers.EffectsManager.SuppressRadar(p); }
-        else c.Effects.ClearConcealment();
+        c.Effects.Conceal(p,player,attached,_alpha==0);
+        if (_alpha==0) Managers.EffectsManager.SuppressRadar(p);
     }
     public override void Cleanup(PowerContext c)
     { _active=false; _alpha=255; c.Effects.ClearConcealment(); c.Effects.RestoreColorsExcept(new HashSet<uint>()); }

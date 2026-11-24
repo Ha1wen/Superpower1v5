@@ -19,13 +19,13 @@ public sealed class PowerSettings
     public static PowerSettings Defaults(string id) => id switch
     {
         "super_speed" => new() { Strength = 2.5f },
-        "vampirism" => new() { Strength = 1f },
+        "blood_pact" => new() { Strength = 1f },
         "invisibility" => new() { Strength = 25 },
         "teleport" => new() { Cooldown = 15, Distance = 0 },
-        "explosive_bullets" => new() { Strength = 55, Radius = 180, Interval = .15f },
+        "explosive_bullets" => new() { Strength = 80, Radius = 250, Interval = .15f },
         "infinite_ammo" => new(),
         "rapid_fire" => new() { Strength = 1.6f },
-        "low_gravity" => new() { Strength = .35f },
+        "decoy_clone" => new() { Cooldown = 20, Duration = 10 },
         "wall_vision" => new(),
         "knockback" => new() { Strength = 800 },
         "second_chance" => new() { Strength = 100, Duration = 3 },
@@ -35,10 +35,12 @@ public sealed class PowerSettings
         "random_explosion" => new() { Strength = 500, Cooldown = 20 },
         "tiny" => new() { Strength = .5f },
         "juggernaut" => new() { Strength = 500 },
-        "cluster_grenade" => new() { Strength = 4, MaxEntities = 32 },
+        "cluster_grenade" => new() { Strength = 5, MaxEntities = 32 },
         "infinite_jump" => new() { Strength = 301.99f },
         "random_teleport" => new() { Cooldown = 20 },
         "forcefield" => new() { Duration = 10, Cooldown = 35 },
+        "thunder_god" => new() { Cooldown = 10 },
+        "random_swap" => new() { Cooldown = 20 },
         _ => new()
     };
 
@@ -50,21 +52,22 @@ public sealed class PowerSettings
         if (id is "invisibility" or "wall_vision") { Duration = 0; Cooldown = 0; }
         if (id == "random_explosion") Duration = 0;
         if (id == "forcefield") { Duration=10; Cooldown=Safe(Cooldown,10,600,35); }
+        if (id == "thunder_god") Cooldown = 10;
+        if (id == "decoy_clone") Duration = 10;
         if (id == "second_chance") Duration = Safe(Duration,1,8,3);
         Interval = Safe(Interval, .05f, 300, d.Interval);
         Radius = Safe(Radius, 32, 500, d.Radius);
         Distance = id == "teleport" && Distance == 0 ? 0 : Safe(Distance, 64, 32768, d.Distance);
         Chance = Safe(Chance, 0, 1, d.Chance);
-        MaxEntities = Math.Clamp(MaxEntities,1,id=="cluster_grenade" ? 64 : 16);
+        MaxEntities = id=="cluster_grenade" ? Math.Clamp(MaxEntities,4,64) : Math.Clamp(MaxEntities,1,16);
         if (id=="juggernaut") Strength=500;
-        if (id=="cluster_grenade") Strength=4;
+        if (id=="cluster_grenade") Strength=5;
         var range = id switch
         {
             "super_speed" => (1f, 5f),
             "rapid_fire" => (1f, 5f),
-            "vampirism" => (0f, 1f),
+            "blood_pact" => (0f, 1f),
             "invisibility" => (1f, 100f),
-            "low_gravity" => (.15f, 1f),
             "explosive_bullets" => (1f, 250f),
             "knockback" => (50f, 2000f),
             "second_chance" => (1f, 100f),
@@ -74,7 +77,7 @@ public sealed class PowerSettings
             "random_explosion" => (100f,1000f),
             "tiny" => (.3f,.8f),
             "juggernaut" => (500f,500f),
-            "cluster_grenade" => (4f,4f),
+            "cluster_grenade" => (5f,5f),
             _ => (0f, 1000f)
         };
         Strength = Safe(Strength, range.Item1, range.Item2, d.Strength);
@@ -87,7 +90,7 @@ public sealed class PowerSettings
 public sealed class PluginConfig : BasePluginConfig
 {
     [JsonPropertyName("ConfigVersion")]
-    public override int Version { get; set; } = 8;
+    public override int Version { get; set; } = 11;
     public bool Enabled { get; set; } = true;
     public string GameMode { get; set; } = "1v5";
     public int NormalHealth { get; set; } = 100;
@@ -123,8 +126,11 @@ public sealed class PluginConfig : BasePluginConfig
         if (!float.IsFinite(InvisibilityQuietDelay) || InvisibilityQuietDelay is <0 or >10) InvisibilityQuietDelay=.5f;
         if (!float.IsFinite(InvisibilityFadeDuration) || InvisibilityFadeDuration is <.1f or >10) InvisibilityFadeDuration=1;
         PowerBlacklist = (PowerBlacklist ?? []).Where(s => !string.IsNullOrWhiteSpace(s))
-            .Select(s => s.Trim().ToLowerInvariant()).Distinct().ToList();
+            .Select(s => s.Trim().ToLowerInvariant()).Where(id => id != "low_gravity")
+            .Select(id => id == "vampirism" ? "blood_pact" : id).Distinct().ToList();
         Powers ??= new();
+        if (Powers.Remove("vampirism", out var oldHealing) && oldHealing is not null &&
+            (Version < 10 || !Powers.ContainsKey("blood_pact"))) Powers["blood_pact"] = oldHealing;
         foreach (var retired in Powers.Keys.Where(id => !PowerCatalog.All.Any(p => p.Id == id)).ToArray()) Powers.Remove(retired);
         foreach (var power in PowerCatalog.All)
         {
@@ -135,7 +141,7 @@ public sealed class PluginConfig : BasePluginConfig
         if (Version < 2)
         {
             // Apply the requested balance revision while preserving cooldowns and unrelated settings.
-            foreach (var id in new[] { "super_speed", "vampirism", "explosive_bullets", "low_gravity", "knockback" })
+            foreach (var id in new[] { "super_speed", "blood_pact", "explosive_bullets", "knockback" })
                 Powers[id].Strength = PowerSettings.Defaults(id).Strength;
             Powers["teleport"].Distance = 0;
             Powers["explosive_bullets"].Radius = PowerSettings.Defaults("explosive_bullets").Radius;
@@ -149,6 +155,15 @@ public sealed class PluginConfig : BasePluginConfig
         if (Version < 6) { Powers["second_chance"].Duration=3; Version=6; }
         if (Version < 7) Version=7;
         if (Version < 8) Version=8;
+        if (Version < 9)
+        {
+            var blast=Powers["explosive_bullets"];
+            var defaults=PowerSettings.Defaults("explosive_bullets");
+            if (blast.Strength==55) blast.Strength=defaults.Strength;
+            if (blast.Radius==180) blast.Radius=defaults.Radius;
+            Version=9;
+        }
+        if (Version < 11) Version=11;
     }
 
     public bool IsAvailable(PowerDefinition power) => Powers[power.Id].Enabled && !PowerBlacklist.Contains(power.Id);

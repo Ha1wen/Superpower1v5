@@ -29,15 +29,15 @@ public sealed partial class Plugin
     private int LivingPlayers() => Mode.Eligible().Count(p=>Players.AlivePawn(p) is not null);
     private void ScheduleRandomKillTests()
     {
-        AddTimer(12,()=>Probe("Direct kill selects one of all six living players without blast effects or Vampirism healing",()=> {
+        AddTimer(12,()=>Probe("Direct kill selects one of all six living players without blast effects or Blood Pact healing",()=> {
             Require(Mode.Live && Mode.Opponents.Count()==5 && LivingPlayers()==6,"roster");
             var victims=Mode.Opponents.ToArray(); _firstKill=victims[0].EntityHandle.Raw;
             _killRandom=new(this,victims[0].EntityHandle.Raw,victims[1].EntityHandle.Raw);
-            Powers.NativeProbePair("random_explosion","vampirism",_killRandom);
+            Powers.NativeProbePair("random_explosion","blood_pact",_killRandom);
             Players.AlivePawn(Mode.Boss)!.Health=50; Players.AlivePawn(victims[0])!.ArmorValue=100;
             Powers.Activate(0);
             Require(Players.AlivePawn(victims[0]) is null && LivingPlayers()==5,"target survived or another player died");
-            Require(Players.AlivePawn(Mode.Boss)!.Health==50,"direct death generated Vampirism healing");
+            Require(Players.AlivePawn(Mode.Boss)!.Health==50,"direct death generated Blood Pact healing");
             Require(_killRandom.PoolSize==6 && TrackedEntityCount==0,"boss omitted or blast effect created");
             Require(Powers.Loadout!.Remaining("random_explosion",Server.CurrentTime)>19.9,"20-second cooldown missing");
             Powers.Activate(0); Powers.Give("random_explosion",1); Powers.Activate(1);

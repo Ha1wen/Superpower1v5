@@ -1,27 +1,27 @@
-# Verification: v1.8.0
+# Verification for v1.9.0
 
-Verified locally on Windows CS2 with CounterStrikeSharp API 1.0.380.0 and .NET SDK 10.0.404 on 2026-11-15 (Asia/Tokyo).
+Tested on Windows CS2 build 26879581 with CounterStrikeSharp API 1.0.380.0 and .NET 10.
 
-## Production and automated checks
+## Build and automated checks
 
-The production Release build has zero warnings/errors. **35/35 automated checks pass**, including the 21-power catalog/factory, equal selection probability, 1v5 roster, permissions, version-8 config migration, restricted deathmatch pools, different respawn pairs, fresh life state, mode detection, crouch/eye-height arithmetic, bounded rewind history and lethal hitgroup scaling. Diagnostic probes and native damage injectors are excluded from the production assembly.
+The production build passed with zero warnings and zero errors. All 37 automated checks passed, including the 24-power catalog, two-power loadout rules, config migration through version 11, and exclusion of native test probes from the production assembly.
 
-## Native engine checks
+## Dedicated server checks
 
-**24/24 focused gameplay checks pass** on private servers bound to `127.0.0.1:27016`, using the installed game/framework binaries:
+The isolated Windows server ran the following checks with real CS2 engine entities and bots.
 
-- [20 ability checks](verification/ability-update-v1.8.json): 1v5 roster and all 21 implementations; Tiny's body/client scale, standing/crouched firing offset and cleanup; equipped-rifle recoil/camera cleanup and shortened firing delay; random clear destination and cooldown enforcement; concealment/shadow/radar suppression; planted C4 exclusion; repeated noise transitions and weapon changes; Wall Vision respecting concealed targets; lethal protection immediately after Teleport, deferred historical movement and overlapping-blink rejection; explicitly populated head hitgroups; Forcefield priority, duration, cooldown and cleanup; repeated air jumps with preserved horizontal velocity; native Molotov spreading/damage, Cluster Grenade recursion suppression, smoke extinguishing and entity cleanup.
-- [Two deathmatch checks](verification/deathmatch-v1.8.json): native deathmatch has no T boss, gives all active players separate pairs, clears death effects and automatically rolls a different pair on the next life, with fresh cooldowns and one-use state. The fixture initially spawns its test bots through the native Respawn API; the tested death is followed by the engine's automatic deathmatch respawn.
-- [Two rifle/teleport checks](verification/rifle-teleport-v1.8.json): the owner activates the actual Teleport ability, then a bot fires a real AK-47. Second Chance prevents lethal damage, rewinds to pre-teleport history and keeps the round live.
+| Suite | Passed | Coverage |
+|---|---:|---|
+| Ability updates | 30/30 | C4 transmission during Invisibility and reveal, planted C4, cluster projectile layout, Random Swap, Unlimited Wallbang, and existing abilities |
+| Decoy Clone and grenade refunds | 11/11 | Model and weapon attachment, walking poses and footsteps, bullet-triggered flash, timed expiry, grenade refunds, and Blood Pact |
+| Thunder God | 13/13 | Zeus range and accuracy, native firing paths, cover, and ten-second recharge |
+| Tiny | 8/8 | Standing and crouched firing height, actual bullets and player hitgroups, and cleanup |
+| Native deathmatch | 2/2 | Independent loadouts, automatic respawn, and fresh cooldowns |
 
-The full logs and earlier exploratory runs remain in ignored `artifacts/` directories. Initial test assumptions about exact engine eye height and an equipped firearm were corrected. An early deathmatch fixture incorrectly used competitive restart commands; the final fixture uses native deathmatch behavior. Failed exploratory runs are not counted as passes.
+## Client and platform coverage
 
-## Remaining manual checks and known limit
+Human-client checks for C4 charm and light rendering, Decoy Clone appearance, and Tiny crosshair alignment remain open. Decoy Clone's AnimGraph2 locomotion is bound to Windows CS2 build 26879581. The standard moving prop is used on other builds.
 
-These native tests use bots and engine entities, not a human client's rendered screen. Tiny crosshair/bullet alignment and the first-person/spectator appearance of Invisibility need client playtesting. No human client crash was reproduced or captured. Invisibility now avoids broad entity casts and live-pawn/equipment transmission removal, excludes planted C4, preserves viewmodels, and clears spotting while fully concealed; this addresses the likely unsafe paths without claiming a proven reproduction of the reported client crash.
+Some isolated Windows runs reproduced the known access violation on shutdown after the gameplay results were recorded and the plugin unloaded.
 
-Some isolated Windows runs still reproduce the previously documented access violation during shutdown after successful plugin unload. The final native deathmatch and actual-rifle runs exited normally; the full ability run recorded all passing gameplay checks before that shutdown fault. This existing shutdown issue remains separate from the client invisibility report.
-
-Pyromaniac uses the existing native Molotov factory binding. Native fire controls damage ramp, radius/spreading, audio and natural lifetime; the plugin caps ignition rate, pool count and maximum duration and removes its fire on cleanup. Random Teleport samples the loaded navigation mesh, with player-spawn fallback, validates floor/body clearance and avoids occupied destinations. No safe destination means no cooldown charge. Forcefield blocks damage; explicit administrative suicides bypass damage hooks.
-
-The [v1.7 report](VERIFICATION-v1.7.md) and older native JSON files are historical evidence, not new v1.8 results.
+See the [v1.8.0 verification record](https://github.com/Ha1wen/Superpower1v5/blob/v1.8.0/docs/VERIFICATION.md) for historical results.

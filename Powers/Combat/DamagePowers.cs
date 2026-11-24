@@ -5,17 +5,32 @@ using Superpower1v5.Support;
 
 namespace Superpower1v5.Powers.Combat;
 
-public sealed class Vampirism() : Power("vampirism")
+public sealed class BloodPact() : Power("blood_pact")
 {
-    private float _fraction;
+    private double _fraction;
+    private bool _boosted;
+
+    public void Kill(PowerContext context)
+    {
+        _boosted=true;
+        Tick(context);
+    }
+
+    public override void Tick(PowerContext context)
+    {
+        if (_boosted && context.Pawn is { } pawn) context.Effects.Speed(pawn,Id,1.1f);
+    }
+
     public override void AfterDamage(PowerContext context, DamageDealt damage)
     {
         // Secondary blast damage can heal too; healing itself never emits a damage event.
-        if (!damage.Hit.BossAttacker) return;
-        _fraction += damage.HealthLost * Settings(context).Strength;
-        var heal = (int)_fraction;
+        if (!damage.Hit.BossAttacker || context.Pawn is not { } pawn) return;
+        _fraction += damage.HealthLost * (double)Settings(context).Strength;
+        var heal = (long)_fraction;
         _fraction -= heal;
-        Players.Heal(context.Boss, heal);
+        if (heal <= 0) return;
+        pawn.Health = (int)Math.Min(int.MaxValue, (long)pawn.Health + heal);
+        Utilities.SetStateChanged(pawn, "CBaseEntity", "m_iHealth");
     }
 }
 

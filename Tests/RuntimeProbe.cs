@@ -37,6 +37,12 @@ public sealed partial class Plugin
             Server.ExecuteCommand("bot_join_team any"); Server.ExecuteCommand("bot_quota_mode normal"); Server.ExecuteCommand("bot_quota 6"); Server.ExecuteCommand("bot_stop 1");
             if (!Mode.IsDeathmatch) { Server.ExecuteCommand("mp_freezetime 1"); Server.ExecuteCommand("mp_warmup_end"); Server.ExecuteCommand("mp_restartgame 1"); }
         });
+        if (ProbeDirectory.Contains("tiny-native",StringComparison.OrdinalIgnoreCase))
+        { ScheduleTinyProbe(); return; }
+        if (ProbeDirectory.Contains("thunder-native",StringComparison.OrdinalIgnoreCase))
+        { ScheduleThunderProbe(); return; }
+        if (ProbeDirectory.Contains("clone-update-native",StringComparison.OrdinalIgnoreCase))
+        { ScheduleCloneProbe(); return; }
         if (ProbeDirectory.Contains("ability-update-native",StringComparison.OrdinalIgnoreCase))
         { ScheduleAbilityUpdateProbe(); return; }
         if (ProbeDirectory.Contains("deathmatch-update-native",StringComparison.OrdinalIgnoreCase))
@@ -54,7 +60,6 @@ public sealed partial class Plugin
         if (ProbeDirectory.Contains("round-options-native",StringComparison.OrdinalIgnoreCase))
         { ScheduleRoundOptionsProbe(); return; }
         AddTimer(12,NativeFeedbackProbe,TimerFlags.STOP_ON_MAPCHANGE);
-        AddTimer(13,GravityPhysicsProbe,TimerFlags.STOP_ON_MAPCHANGE);
         AddTimer(16,()=> {
             Probe("Second Chance prevents a real lethal hit and records consumption",()=> {
                 var boss=Mode.Boss!; Players.Heal(boss,100); Powers.NativeProbePair("second_chance","infinite_ammo");
@@ -89,15 +94,15 @@ public sealed partial class Plugin
             Require(Mode.Eligible().All(p=>Players.AlivePawn(p)?.Health==100),"health");
             _probeFirstBoss=Players.Key(Mode.Boss!);
         });
-        Probe("All 21 powers construct and apply in the engine",()=> {
+        Probe("All 24 powers construct and apply in the engine",()=> {
             foreach (var definition in PowerCatalog.All)
             {
                 Powers.NativeProbePair(definition.Id,definition.Id=="infinite_ammo" ? "teleport" : "infinite_ammo");
                 Powers.Tick(); Powers.SlowTick();
             }
         });
-        Probe("Vampirism heals 100% of primary and secondary health damage",()=> {
-            Powers.NativeProbePair("vampirism","infinite_ammo");
+        Probe("Blood Pact heals 100% of primary and secondary health damage",()=> {
+            Powers.NativeProbePair("blood_pact","infinite_ammo");
             var boss=Mode.Boss!; var victim=Mode.Opponents.First();
             var pawn=Players.AlivePawn(boss)!; var target=Players.AlivePawn(victim)!;
             pawn.Health=50; target.Health=100;
@@ -107,7 +112,7 @@ public sealed partial class Plugin
             Require(pawn.Health==90,$"blast did not heal: {pawn.Health}"); Players.Heal(boss,100); Players.Heal(victim,100);
         });
         Probe("A null native result plus player_hurt fallback keeps effects working",()=> {
-            ClearDamageTracking(); Powers.NativeProbePair("vampirism","infinite_ammo");
+            ClearDamageTracking(); Powers.NativeProbePair("blood_pact","infinite_ammo");
             var boss=Mode.Boss!; var victim=Mode.Opponents.First(); var pawn=Players.AlivePawn(boss)!;
             pawn.Health=50; Players.AlivePawn(victim)!.Health=80;
             AfterDamage(Players.AlivePawn(victim)!,new CTakeDamageInfo(IntPtr.Zero),new CTakeDamageResult(IntPtr.Zero));
@@ -123,14 +128,13 @@ public sealed partial class Plugin
             Require(Powers.Loadout.Powers[1].Id=="teleport" && Powers.Active[1].Id=="teleport","slot swap");
             Require(Powers.Loadout.Remaining("teleport",Server.CurrentTime)>14,"cooldown reset");
         });
-        Probe("Speed is 2.5x and both gravity fields restore on cleanup",()=> {
+        Probe("Speed is 2.5x and restores on cleanup",()=> {
             Powers.NativeProbePair("teleport","infinite_ammo"); var pawn=Players.AlivePawn(Mode.Boss)!;
-            var speed=pawn.VelocityModifier; var gravity=pawn.GravityScale; var actual=pawn.ActualGravityScale;
-            Powers.NativeProbePair("super_speed","low_gravity"); Powers.Tick();
+            var speed=pawn.VelocityModifier;
+            Powers.NativeProbePair("super_speed","decoy_clone"); Powers.Tick();
             Require(Math.Abs(pawn.VelocityModifier-speed*2.5f)<.01,"speed multiplier");
-            Require(Math.Abs(pawn.GravityScale-gravity*.35f)<.01 && Math.Abs(pawn.ActualGravityScale-actual*.35f)<.01,"gravity fields");
             Powers.NativeProbePair("teleport","infinite_ammo");
-            Require(Math.Abs(pawn.VelocityModifier-speed)<.01 && Math.Abs(pawn.GravityScale-gravity)<.01 && Math.Abs(pawn.ActualGravityScale-actual)<.01,"movement cleanup");
+            Require(Math.Abs(pawn.VelocityModifier-speed)<.01,"movement cleanup");
         });
         Probe("Unlimited teleport reaches beyond the old 450-unit distance",()=> {
             Powers.NativeProbePair("teleport","infinite_ammo"); var pawn=Players.AlivePawn(Mode.Boss)!;
@@ -174,25 +178,6 @@ public sealed partial class Plugin
                     Powers.NativeProbePair("teleport","infinite_ammo"); Require(Effects.OutlineCount==0,"outline leak");
                 }),TimerFlags.STOP_ON_MAPCHANGE);
             }),TimerFlags.STOP_ON_MAPCHANGE);
-        });
-    }
-    private void GravityPhysicsProbe()
-    {
-        Probe("Gravity physics sample starts in clear air",()=> {
-            Powers.NativeProbePair("teleport","infinite_ammo");
-            var pawn=Players.AlivePawn(Mode.Boss)!; var raw=pawn.EntityHandle.Raw;
-            var original=Players.Copy(pawn.AbsOrigin!); var air=new Vector(original.X,original.Y,original.Z+500);
-            pawn.GroundEntity.Raw=uint.MaxValue; pawn.Flags &= ~1u; pawn.Teleport(air,null,new Vector(0,0,0));
-            AddTimer(.25f,()=> {
-                var normal=Players.Entity<CCSPlayerPawn>(raw)!; var normalVelocity=normal.AbsVelocity.Z;
-                Powers.NativeProbePair("low_gravity","infinite_ammo");
-                normal.GroundEntity.Raw=uint.MaxValue; normal.Flags &= ~1u; normal.Teleport(air,null,new Vector(0,0,0));
-                AddTimer(.25f,()=>Probe("Low Gravity reduces actual falling acceleration",()=> {
-                    var slower=Players.Entity<CCSPlayerPawn>(raw)!; var lowVelocity=slower.AbsVelocity.Z;
-                    try { Require(normalVelocity < -40 && lowVelocity< -5 && Math.Abs(lowVelocity)<Math.Abs(normalVelocity)*.7f,$"normal vz={normalVelocity:0.0}, low vz={lowVelocity:0.0}"); }
-                    finally { Powers.NativeProbePair("teleport","infinite_ammo"); slower.Teleport(original,null,new Vector(0,0,0)); }
-                }),TimerFlags.STOP_ON_MAPCHANGE);
-            },TimerFlags.STOP_ON_MAPCHANGE);
         });
     }
 }

@@ -47,14 +47,16 @@ public sealed class PowerManager(Plugin plugin)
     public IReadOnlyList<PowerReveal> Reveals => _owners.Values.Where(o=>o.Loadout is not null).Select(o=>new PowerReveal(o.Name,o.Loadout!.Powers.ToArray())).ToArray();
     public static Power Create(string id) => id switch
     {
-        "super_speed" => new SuperSpeed(), "vampirism" => new Vampirism(), "invisibility" => new Invisibility(),
+        "super_speed" => new SuperSpeed(), "blood_pact" => new BloodPact(), "invisibility" => new Invisibility(),
         "teleport" => new Teleport(), "explosive_bullets" => new ExplosiveBullets(), "infinite_ammo" => new InfiniteAmmo(),
-        "rapid_fire" => new RapidFire(), "low_gravity" => new LowGravity(), "wall_vision" => new WallVision(),
+        "rapid_fire" => new RapidFire(), "decoy_clone" => new DecoyClone(), "wall_vision" => new WallVision(),
         "knockback" => new Knockback(), "second_chance" => new SecondChance(),
         "bhop" => new Bhop(), "tiny" => new Tiny(), "sandevistan" => new Sandevistan(),
         "pyromaniac" => new Pyromaniac(), "random_explosion" => new RandomKill(),
         "juggernaut" => new Juggernaut(), "cluster_grenade" => new ClusterGrenade(),
         "infinite_jump" => new InfiniteJump(), "random_teleport" => new RandomTeleport(), "forcefield" => new Forcefield(),
+        "thunder_god" => new ThunderGod(),
+        "unlimited_wallbang" => new UnlimitedWallbang(), "random_swap" => new RandomSwap(),
         _ => throw new ArgumentException($"Unknown power: {id}")
     };
     public void Roll(bool newRound,CCSPlayerController? player=null,bool differentPair=false)
@@ -107,9 +109,26 @@ public sealed class PowerManager(Plugin plugin)
             foreach (var power in state.Active.ToArray()) action(power,state.Context);
         }
     }
+    public void PlayerKilled(CCSPlayerController? attacker,CCSPlayerController? victim)
+    {
+        if (!Players.Playing(attacker) || !Players.Playing(victim) || !plugin.Mode.Enemies(attacker!,victim!)) return;
+        Dispatch((power,context)=> { if (power is BloodPact pact) pact.Kill(context); },attacker);
+    }
+
     public void Tick() => Dispatch((p,c)=>p.Tick(c),all:true);
     public void SlowTick() => Dispatch((p,c)=>p.SlowTick(c),all:true);
     public void Fire(CCSPlayerController? player=null) { Noise(player); Dispatch((p,c)=>p.WeaponFire(c),player); }
+    public void TaserFired(CCSPlayerController player)
+    {
+        if (plugin.Mode.CanUsePlayerPowers(player) && Find(player) is { Enabled:true } owner)
+            owner.Active.OfType<ThunderGod>().FirstOrDefault()?.Discharge(owner.Context);
+    }
+    public void GrenadeThrown(CCSPlayerController player,string weapon)
+    {
+        if (!plugin.Mode.CanUsePlayerPowers(player) || Find(player) is not { Enabled:true } owner) return;
+        var refill=owner.Active.FirstOrDefault(p=>p is InfiniteAmmo) ?? owner.Active.FirstOrDefault(p=>p is ClusterGrenade);
+        if (refill is not null) GrenadeRefund.Schedule(owner.Context,refill,weapon);
+    }
     public void Jump(CCSPlayerController? player=null) { Noise(player); Dispatch((p,c)=>p.Jump(c),player); }
     public void Noise(CCSPlayerController? player=null) => Dispatch((p,c)=>p.Noise(c),player);
     public void Footstep(CCSPlayerController? player)
@@ -191,7 +210,7 @@ public sealed class PowerManager(Plugin plugin)
     public void FilterTransmission(CCheckTransmitInfoList clients)
     {
         var effects=Volatile.Read(ref _transmission);
-        foreach (var effect in effects) effect.FilterOutlines(clients);
+        foreach (var effect in effects) effect.FilterTransmission(clients);
     }
     public string Status(string id,CCSPlayerController? player=null)
     {
