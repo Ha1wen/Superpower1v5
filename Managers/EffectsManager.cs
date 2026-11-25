@@ -25,8 +25,14 @@ public sealed class EffectsManager
     private static readonly Dictionary<uint,RadarBaseline> SharedRadar=new();
     private readonly Dictionary<uint, Outline> _outlines = new();
     private Outline[] _transmitOutlines = [];
-    private sealed record Concealed(uint Carrier,uint[] Indices,uint[] CarriedBombIndices,uint[] BombViewers);
+    private sealed record Concealed(uint Carrier,uint[] Indices,uint[] CosmeticIndices,uint[] InEyeIndices,uint[] InEyeViewers)
+    {
+        public uint[] SuppressedFor(uint viewer) => viewer==Carrier ? [] :
+            InEyeViewers.Contains(viewer) ? InEyeIndices : CosmeticIndices;
+    }
+    private sealed record HiddenGloves(uint Pawn,ulong ItemId,ushort Definition,byte Revision);
     private Concealed? _concealed;
+    private HiddenGloves? _hiddenGloves;
     public int OutlineCount => _outlines.Count;
     public int HiddenEntityCount => Volatile.Read(ref _concealed)?.Indices.Length ?? 0;
     public bool HiddenFrom(uint viewer,uint entityIndex) => Volatile.Read(ref _concealed) is { } hidden && hidden.Carrier!=viewer && Array.IndexOf(hidden.Indices,entityIndex)>=0;
@@ -37,6 +43,9 @@ public sealed class EffectsManager
             foreach (var handle in weapons.MyWeapons)
                 if (handle.Value is { IsValid:true } weapon && weapon.OwnerEntity.Raw==pawn.EntityHandle.Raw)
                     models[weapon.EntityHandle.Raw]=weapon;
+        foreach (var handle in pawn.MyWearables)
+            if (handle.Value is { IsValid:true } wearable)
+                models[wearable.EntityHandle.Raw]=wearable;
         var roots=models.Values.ToArray();
         foreach (var model in roots) AddChildren(model.CBodyComponent?.SceneNode?.Child,models,0);
         return models.Values.ToArray();
@@ -53,40 +62,57 @@ public sealed class EffectsManager
     }
     private static bool IsEquipmentModel(string name) =>
         name is "prop_dynamic" or "prop_dynamic_override" or "weaponworldmodel" or "weapon_world_model" or
-        "wearable" or "wearable_item" or "econ_wearable" ||
+        "wearable" or "wearable_item" or "econ_wearable" or "econ_entity" ||
         name.StartsWith("weapon_",StringComparison.Ordinal) && !name.Contains("viewmodel",StringComparison.Ordinal);
     public void Conceal(CCSPlayerPawn carrier,CCSPlayerController owner,IReadOnlyList<CBaseModelEntity> attached,bool fullyHidden)
     {
-        var bombIndices=new HashSet<uint>();
+        SuppressGloves(carrier);
+        var cosmeticIndices=new HashSet<uint>();
+        var inEyeIndices=new HashSet<uint>();
         var activeWeapon=carrier.WeaponServices?.ActiveWeapon.Raw;
-        var holdingBomb=false;
-        foreach (var bomb in attached.Where(entity=>entity.DesignerName=="weapon_c4" && entity.OwnerEntity.Raw==carrier.EntityHandle.Raw))
+        foreach (var weapon in attached.OfType<CBasePlayerWeapon>())
         {
-            bombIndices.Add(bomb.Index);
-            holdingBomb|=bomb.EntityHandle.Raw==activeWeapon;
-            AddBombAttachments(bomb.CBodyComponent?.SceneNode?.Child,bombIndices,0);
-            if (bomb.EffectEntity.Value is { IsValid:true } effect && IsBombAttachment(effect.DesignerName))
+            var bomb=weapon.DesignerName=="weapon_c4";
+            if (weapon.OwnerEntity.Raw!=carrier.EntityHandle.Raw || !bomb && !HasCosmeticDisplay(weapon)) continue;
+            var indices=new HashSet<uint> { weapon.Index };
+            AddCosmeticAttachments(weapon.CBodyComponent?.SceneNode?.Child,indices,0);
+            if (weapon.EffectEntity.Value is { IsValid:true } effect && IsCosmeticAttachment(effect.DesignerName))
             {
-                bombIndices.Add(effect.Index);
-                AddBombAttachments(effect.CBodyComponent?.SceneNode?.Child,bombIndices,0);
+                indices.Add(effect.Index);
+                AddCosmeticAttachments(effect.CBodyComponent?.SceneNode?.Child,indices,0);
             }
-            foreach (var charm in Utilities.FindAllEntitiesByDesignerName<CBaseEntity>("keychain_module"))
-                if (charm.IsValid && charm.OwnerEntity.Raw==bomb.EntityHandle.Raw)
-                    bombIndices.Add(charm.Index);
+            if (bomb)
+                foreach (var charm in Utilities.FindAllEntitiesByDesignerName<CBaseEntity>("keychain_module"))
+                    if (charm.IsValid && charm.OwnerEntity.Raw==weapon.EntityHandle.Raw)
+                        indices.Add(charm.Index);
+            cosmeticIndices.UnionWith(indices);
+            // Preserve spectator weapon references. Stowed C4 still needs its third-person light suppressed.
+            if (bomb && weapon.EntityHandle.Raw!=activeWeapon) inEyeIndices.UnionWith(indices);
         }
-        var bombViewers=new List<uint> { owner.EntityHandle.Raw };
-        // In-eye spectators need the active C4 for the viewmodel. A stowed C4
-        // has no first-person use and creates its own light if it is sent.
-        if (holdingBomb)
+        var inEyeViewers=new List<uint>();
+        if (cosmeticIndices.Count!=0)
             foreach (var player in Utilities.GetPlayers())
                 if (player.ObserverPawn.Value?.ObserverServices is { } observer &&
                     observer.ObserverMode==(byte)ObserverMode_t.OBS_MODE_IN_EYE && observer.ObserverTarget.Raw==carrier.EntityHandle.Raw)
-                    bombViewers.Add(player.EntityHandle.Raw);
-        var indices=fullyHidden ? attached.Select(e=>e.Index).Concat(bombIndices).Distinct().ToArray() : [];
-        Volatile.Write(ref _concealed,new(owner.EntityHandle.Raw,indices,bombIndices.ToArray(),bombViewers.ToArray()));
+                    inEyeViewers.Add(player.EntityHandle.Raw);
+        var hiddenIndices=fullyHidden ? attached.Select(e=>e.Index).Concat(cosmeticIndices).Distinct().ToArray() : [];
+        Volatile.Write(ref _concealed,new(owner.EntityHandle.Raw,hiddenIndices,cosmeticIndices.ToArray(),inEyeIndices.ToArray(),inEyeViewers.ToArray()));
     }
 
-    private static void AddBombAttachments(CGameSceneNode? child,HashSet<uint> indices,int depth)
+    private static bool HasCosmeticDisplay(CBasePlayerWeapon weapon)
+    {
+        if (CoreConfig.FollowCS2ServerGuidelines) return false;
+        var item=weapon.AttributeManager.Item;
+        // The engine can create the nameplate and counter on the client without a server-side child.
+        const ushort killEaterAttribute=80;
+        return weapon.FallbackStatTrak>=0 || !string.IsNullOrEmpty(item.CustomName) ||
+            !string.IsNullOrEmpty(item.CustomNameOverride) || !string.IsNullOrEmpty(item.CustomNameOverride2) ||
+            !string.IsNullOrEmpty(item.CustomNameOverride3) ||
+            item.AttributeList.Attributes.Any(attribute=>attribute.AttributeDefinitionIndex==killEaterAttribute) ||
+            item.NetworkedDynamicAttributes.Attributes.Any(attribute=>attribute.AttributeDefinitionIndex==killEaterAttribute);
+    }
+
+    private static void AddCosmeticAttachments(CGameSceneNode? child,HashSet<uint> indices,int depth)
     {
         if (depth>=8) return;
         for (var count=0;child is not null && count<64;child=child.NextSibling,count++)
@@ -94,22 +120,56 @@ public sealed class EffectsManager
             if (child.Owner is not { IsValid:true } entity) continue;
             var name=entity.DesignerName;
             if (name is "planted_c4" or "player" || name.Contains("viewmodel",StringComparison.Ordinal)) continue;
-            if (IsBombAttachment(name)) indices.Add(entity.Index);
-            AddBombAttachments(child.Child,indices,depth+1);
+            if (IsCosmeticAttachment(name)) indices.Add(entity.Index);
+            AddCosmeticAttachments(child.Child,indices,depth+1);
         }
     }
 
-    private static bool IsBombAttachment(string name) =>
-        IsEquipmentModel(name) || name is "keychain_module" or "econ_entity" or "info_particle_system" or
+    private static bool IsCosmeticAttachment(string name) =>
+        IsEquipmentModel(name) || name is "keychain_module" or "info_particle_system" or
         "env_particle_glow" or "env_sprite" or "env_glow" or "light_dynamic" ||
         name.StartsWith("light_",StringComparison.Ordinal) || name.StartsWith("prop_",StringComparison.Ordinal);
 
-    private static bool HideCarriedBombFrom(Concealed hidden,uint viewer) => !hidden.BombViewers.Contains(viewer);
 #if SERVER_SMOKE
-    internal bool HideCarriedBombFrom(uint viewer,uint entityIndex) =>
-        Volatile.Read(ref _concealed) is { } hidden && HideCarriedBombFrom(hidden,viewer) && hidden.CarriedBombIndices.Contains(entityIndex);
+    internal bool SuppressesCosmeticFor(uint viewer,uint entityIndex) =>
+        Volatile.Read(ref _concealed) is { } hidden && hidden.SuppressedFor(viewer).Contains(entityIndex);
 #endif
-    public void ClearConcealment() => Volatile.Write(ref _concealed,null);
+    public void SuppressGloves(CCSPlayerPawn pawn)
+    {
+        var raw=pawn.EntityHandle.Raw;
+        if (_hiddenGloves is { } hidden && hidden.Pawn!=raw) RestoreGloves();
+        var item=pawn.EconGloves;
+        var definition=item.ItemDefinitionIndex;
+        if (definition==0) return;
+
+        // The client builds this wearable from the pawn's item view. Keep the paint and item ID intact.
+        SetGloveDefinition(pawn,0);
+        _hiddenGloves=new(raw,item.ItemID,definition,pawn.EconGlovesChanged);
+    }
+
+    private static void SetGloveDefinition(CCSPlayerPawn pawn,ushort definition)
+    {
+        pawn.EconGloves.ItemDefinitionIndex=definition;
+        unchecked { pawn.EconGlovesChanged++; }
+        Utilities.SetStateChanged(pawn,"CCSPlayerPawn","m_EconGloves");
+        Utilities.SetStateChanged(pawn,"CCSPlayerPawn","m_nEconGlovesChanged");
+    }
+
+    private void RestoreGloves()
+    {
+        var hidden=_hiddenGloves;
+        _hiddenGloves=null;
+        if (hidden is null || Players.Entity<CCSPlayerPawn>(hidden.Pawn) is not { IsValid:true } pawn) return;
+        var item=pawn.EconGloves;
+        if (item.ItemDefinitionIndex==0 && item.ItemID==hidden.ItemId && pawn.EconGlovesChanged==hidden.Revision)
+            SetGloveDefinition(pawn,hidden.Definition);
+    }
+
+    public void ClearConcealment()
+    {
+        Volatile.Write(ref _concealed,null);
+        RestoreGloves();
+    }
 
     public void Speed(CCSPlayerPawn pawn, string source, float amount)
     {
@@ -252,15 +312,15 @@ public sealed class EffectsManager
     {
         FilterOutlines(clients);
         var hidden=Volatile.Read(ref _concealed);
-        if (hidden is null || hidden.CarriedBombIndices.Length==0) return;
-        // C4 creates its holstered light on the client whenever the weapon is present.
-        // Keep it in the carrier's inventory and preserve the carrier's first-person view.
+        if (hidden is null || hidden.CosmeticIndices.Length==0) return;
+        // These weapons spawn third-person accessories on the client. The carrier still sees their weapon.
         foreach (var (info,viewer) in clients)
         {
-            if (!HideCarriedBombFrom(hidden,viewer?.EntityHandle.Raw??0)) continue;
+            var indices=hidden.SuppressedFor(viewer?.EntityHandle.Raw??0);
+            if (indices.Length==0) continue;
             // The optional always-send bit vector belongs to SourceTV and replay.
             var hasAlways=Unsafe.BitCast<CFixedBitVecBase,nint>(info.TransmitAlways)!=0;
-            foreach (var index in hidden.CarriedBombIndices)
+            foreach (var index in indices)
             {
                 info.TransmitEntities.Remove(index);
                 if (hasAlways) info.TransmitAlways.Remove(index);
@@ -283,7 +343,7 @@ public sealed class EffectsManager
     }
     // Invisibility uses model alpha rather than removing a live pawn/equipment from PVS.
     // Removing entities referenced by a client controller/viewmodel can crash the client.
-    // Carried C4 and its visual children are filtered separately for other viewers.
+    // Weapons with independently rendered cosmetics are filtered separately for other viewers.
     public static void SuppressRadar(CCSPlayerPawn pawn)
     {
         var state=pawn.EntitySpottedState;

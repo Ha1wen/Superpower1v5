@@ -39,7 +39,12 @@ public sealed class Invisibility() : Power("invisibility")
         _activeWeapon=weaponRaw;
         if (Concealed) Managers.EffectsManager.SuppressRadar(pawn);
     }
-    public override void PostThink(PowerContext c) { if (Concealed && c.Pawn is { } pawn) Managers.EffectsManager.SuppressRadar(pawn); }
+    public override void PostThink(PowerContext c)
+    {
+        if (_alpha==255 || c.Pawn is not { } pawn) return;
+        c.Effects.SuppressGloves(pawn);
+        if (Concealed) Managers.EffectsManager.SuppressRadar(pawn);
+    }
     public override void SlowTick(PowerContext c)
     {
         if (!_active || c.Pawn is not { } p || c.Boss is not { } player) { Cleanup(c); return; }

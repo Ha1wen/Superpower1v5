@@ -15,7 +15,7 @@ namespace Superpower1v5;
 public sealed partial class Plugin : BasePlugin,IPluginConfig<PluginConfig>
 {
     public override string ModuleName => "Superpower 1v5";
-    public override string ModuleVersion => "1.9.0";
+    public override string ModuleVersion => "1.9.1";
     public override string ModuleAuthor => "Superpower1v5";
     public override string ModuleDescription => "The chosen T player has two private powers against up to five CT opponents.";
     public const string Prefix = " \x04[SUPERPOWER]\x01 ";

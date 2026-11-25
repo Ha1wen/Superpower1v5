@@ -1,3 +1,9 @@
+# Verification for v1.9.1
+
+The Release build passed all 37 automated checks against CounterStrikeSharp API 1.0.380.0. The isolated Windows CS2 server on build 26879581 with CounterStrikeSharp 1.0.381 passed all 31 ability-update checks. The checks covered custom glove suppression and replacement, filtering weapons with nameplates or StatTrak from other viewers, and restoring cosmetics on reveal.
+
+The checks used native item fields. A human-client rendering check with WeaponSkins remains open. The isolated server reproduced the shutdown access violation after recording the results.
+
 # Verification for v1.9.0
 
 Tested on Windows CS2 build 26879581 with CounterStrikeSharp API 1.0.380.0 and .NET 10.

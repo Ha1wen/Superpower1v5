@@ -39,6 +39,8 @@ public sealed partial class Plugin
         PowerContext Context() => new(this,Mode.Boss!.EntityHandle.Raw);
         Vector? history=null; Vector? firePosition=null; CBasePlayerWeapon? clockWeapon=null; int originalClock=0;
         CBasePlayerWeapon? knife=null, carriedBomb=null;
+        CBasePlayerWeapon? namedRifle=null, trackedPistol=null;
+        (ushort Definition,ulong ItemId) originalGloves=default;
         if (ProbeDirectory.Contains("bomb-transmit",StringComparison.OrdinalIgnoreCase))
         {
             var sawVisible=0;
@@ -50,7 +52,7 @@ public sealed partial class Plugin
                 {
                     if (viewer is not { IsHLTV:true }) continue;
                     var raw=viewer.EntityHandle.Raw;
-                    var hidden=Effects.HideCarriedBombFrom(raw,bomb.Index);
+                    var hidden=Effects.SuppressesCosmeticFor(raw,bomb.Index);
                     var always=System.Runtime.CompilerServices.Unsafe.BitCast<CFixedBitVecBase,nint>(info.TransmitAlways)!=0 &&
                         info.TransmitAlways.Contains(bomb.Index);
                     var transmitted=info.TransmitEntities.Contains(bomb.Index);
@@ -114,14 +116,26 @@ public sealed partial class Plugin
         });
         UpdateAt(14,"Invisibility starts a safe render-only fade",()=> {
             Config.InvisibilityQuietDelay=0; Config.InvisibilityFadeDuration=.3f;
-            knife=Mode.Boss!.GiveNamedItem<CBasePlayerWeapon>("weapon_knife");
+            Mode.Boss!.RemoveWeapons();
+            knife=Mode.Boss.GiveNamedItem<CBasePlayerWeapon>("weapon_knife");
             carriedBomb=Mode.Boss.GiveNamedItem<CBasePlayerWeapon>("weapon_c4");
+            if (!CoreConfig.FollowCS2ServerGuidelines)
+            {
+                namedRifle=Mode.Boss.GiveNamedItem<CBasePlayerWeapon>("weapon_ak47")!;
+                namedRifle.AttributeManager.Item.CustomName="Invisibility probe";
+                trackedPistol=Mode.Boss.GiveNamedItem<CBasePlayerWeapon>("weapon_glock")!;
+                trackedPistol.FallbackStatTrak=0;
+            }
+            var gloves=Context().Pawn!.EconGloves;
+            originalGloves=(gloves.ItemDefinitionIndex,gloves.ItemID);
+            gloves.ItemDefinitionIndex=5030;
+            gloves.ItemID=10001;
             Powers.NativeProbePair("invisibility","infinite_ammo");
         });
         UpdateAt(14.15f,"C4 visuals stop transmitting as soon as the carrier starts fading",()=> {
             Powers.SlowTick();
             var pawn=Context().Pawn!;
-            Require(pawn.Render.A is >0 and <255 && Effects.HideCarriedBombFrom(Mode.Opponents.First().EntityHandle.Raw,carriedBomb!.Index),
+            Require(pawn.Render.A is >0 and <255 && Effects.SuppressesCosmeticFor(Mode.Opponents.First().EntityHandle.Raw,carriedBomb!.Index),
                 $"carrier alpha={pawn.Render.A}, bomb still visible during fade");
         });
         UpdateAt(14.4f,"Silent invisibility hides model/shadow and suppresses engine radar spotting",()=> {
@@ -134,6 +148,24 @@ public sealed partial class Plugin
             Powers.Tick(); Powers.PostThink();
             Require(!pawn.EntitySpottedState.Spotted && pawn.EntitySpottedState.SpottedByMask[0]==0 && pawn.EntitySpottedState.SpottedByMask[1]==0,"radar leak");
         });
+        UpdateAt(14.5f,"Custom gloves are suppressed and can be updated during concealment",()=> {
+            var pawn=Context().Pawn!;
+            Require(pawn.EconGloves.ItemDefinitionIndex==0 && pawn.EconGloves.ItemID==10001,"custom gloves were visible or changed identity");
+            pawn.EconGloves.ItemID=10002;
+            pawn.EconGloves.ItemDefinitionIndex=5031;
+            unchecked { pawn.EconGlovesChanged++; }
+            Powers.PostThink();
+            Require(pawn.EconGloves.ItemDefinitionIndex==0 && pawn.EconGloves.ItemID==10002,"replacement gloves leaked while hidden");
+        });
+        if (!CoreConfig.FollowCS2ServerGuidelines)
+            UpdateAt(14.55f,"Nameplate and StatTrak weapons are withheld from outsiders while fading",()=> {
+                var other=Mode.Opponents.First().EntityHandle.Raw;
+                var self=Mode.Boss!.EntityHandle.Raw;
+                Require(Effects.SuppressesCosmeticFor(other,namedRifle!.Index) && Effects.SuppressesCosmeticFor(other,trackedPistol!.Index) &&
+                    !Effects.SuppressesCosmeticFor(self,namedRifle.Index) && !Effects.SuppressesCosmeticFor(self,trackedPistol.Index),
+                    "a nameplate or StatTrak weapon could leak, or was withheld from its owner");
+                Require(!Effects.SuppressesCosmeticFor(other,knife!.Index),"ordinary knife was removed from snapshots");
+            });
         UpdateAt(14.6f,"Concealment filters the carried C4, charm model and linked light for other viewers",()=> {
             var carrier=Mode.Boss!;
             var viewer=Mode.Opponents.First();
@@ -153,10 +185,10 @@ public sealed partial class Plugin
                 Powers.SlowTick();
                 var other=viewer.EntityHandle.Raw;
                 var self=carrier.EntityHandle.Raw;
-                Require(Effects.HideCarriedBombFrom(other,bomb.Index) && Effects.HideCarriedBombFrom(other,light.Index) &&
-                    Effects.HideCarriedBombFrom(other,charm.Index),"carried C4, charm or light could still reach another viewer");
-                Require(!Effects.HideCarriedBombFrom(self,bomb.Index) && !Effects.HideCarriedBombFrom(self,light.Index) &&
-                    !Effects.HideCarriedBombFrom(other,Context().Pawn!.Index),"concealment removed the owner inventory or player pawn");
+                Require(Effects.SuppressesCosmeticFor(other,bomb.Index) && Effects.SuppressesCosmeticFor(other,light.Index) &&
+                    Effects.SuppressesCosmeticFor(other,charm.Index),"carried C4, charm or light could still reach another viewer");
+                Require(!Effects.SuppressesCosmeticFor(self,bomb.Index) && !Effects.SuppressesCosmeticFor(self,light.Index) &&
+                    !Effects.SuppressesCosmeticFor(other,Context().Pawn!.Index),"concealment removed the owner inventory or player pawn");
             }
             finally
             {
@@ -174,13 +206,24 @@ public sealed partial class Plugin
                 bomb.BombTicking=false; bomb.BombDefused=true;
                 Powers.SlowTick();
                 Require(!Effects.AttachedEntities(pawn).Any(e=>e.EntityHandle.Raw==bomb.EntityHandle.Raw) && bomb.Render.A==255 &&
-                    !Effects.HideCarriedBombFrom(Mode.Opponents.First().EntityHandle.Raw,bomb.Index),"planted bomb hidden");
+                    !Effects.SuppressesCosmeticFor(Mode.Opponents.First().EntityHandle.Raw,bomb.Index),"planted bomb hidden");
                 new EventBombPlanted(true) { Userid=Mode.Boss }.FireEvent(false);
                 Require(pawn.Render.A==255 && !Powers.IsConcealed(Mode.Boss) &&
-                    !Effects.HideCarriedBombFrom(Mode.Opponents.First().EntityHandle.Raw,carriedBomb!.Index),"plant did not reveal");
+                    !Effects.SuppressesCosmeticFor(Mode.Opponents.First().EntityHandle.Raw,carriedBomb!.Index),"plant did not reveal");
                 Require(knife?.RenderMode!=RenderMode_t.kRenderNone && carriedBomb?.RenderMode!=RenderMode_t.kRenderNone,"carried model did not restore");
+                var other=Mode.Opponents.First().EntityHandle.Raw;
+                Require(pawn.EconGloves.ItemDefinitionIndex==5031 && pawn.EconGloves.ItemID==10002,"latest glove selection did not restore");
+                if (namedRifle is not null && trackedPistol is not null)
+                    Require(!Effects.SuppressesCosmeticFor(other,namedRifle.Index) && !Effects.SuppressesCosmeticFor(other,trackedPistol.Index) &&
+                        namedRifle.AttributeManager.Item.CustomName=="Invisibility probe" && trackedPistol.FallbackStatTrak==0,
+                        "weapon cosmetics did not restore");
             }
-            finally { if (bomb.IsValid) bomb.Remove(); }
+            finally
+            {
+                pawn.EconGloves.ItemDefinitionIndex=originalGloves.Definition;
+                pawn.EconGloves.ItemID=originalGloves.ItemId;
+                if (bomb.IsValid) bomb.Remove();
+            }
         });
         UpdateAt(16,"Invisibility survives repeated noisy/quiet transitions with a weapon swap",()=> {
             for (var n=0;n<30;n++) { Powers.Noise(Mode.Boss); Powers.SlowTick(); }

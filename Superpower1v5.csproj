@@ -5,14 +5,20 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>Superpower1v5</AssemblyName>
-    <Version>1.9.0</Version>
+    <Version>1.9.1</Version>
+    <DefaultItemExcludes>$(DefaultItemExcludes);artifacts\**</DefaultItemExcludes>
     <CounterStrikeSharpPath Condition="'$(CounterStrikeSharpPath)' == ''">$(MSBuildThisFileDirectory)..\..\game\csgo\addons\counterstrikesharp\api</CounterStrikeSharpPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <PathMap>$(MSBuildProjectDirectory)=/_/Superpower1v5</PathMap>
+    <EnableSourceLink>false</EnableSourceLink>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
   </PropertyGroup>
   <PropertyGroup Condition="'$(ServerSmoke)' == 'true'">
     <DefineConstants>$(DefineConstants);SERVER_SMOKE</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Remove="tools\**;Tests\**;artifacts\**" />
+    <Compile Remove="tools\**;Tests\**" />
     <Compile Include="Tests\RuntimeProbe.cs" Condition="'$(ServerSmoke)' == 'true'" />
     <Compile Include="Tests\NewPowerProbe.cs" Condition="'$(ServerSmoke)' == 'true'" />
     <Compile Include="Tests\PersistentPowerProbe.cs" Condition="'$(ServerSmoke)' == 'true'" />
