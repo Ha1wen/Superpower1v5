@@ -1,3 +1,7 @@
+# Verification for v1.9.2
+
+The Release build passed all 37 automated checks against CounterStrikeSharp API 1.0.380.0. On an isolated Windows CS2 server with CounterStrikeSharp 1.0.381, the new Blood Pact check reproduced the old speed multiplier of 0.495 after a kill while tagged. With the fix, the multiplier stayed at 1.10 after two kills, stacked with Super Speed, and returned to normal as the powers were removed. All 12 checks in the Decoy Clone suite passed before the server reproduced the shutdown access violation.
+
 # Verification for v1.9.1
 
 The Release build passed all 37 automated checks against CounterStrikeSharp API 1.0.380.0. The isolated Windows CS2 server on build 26879581 with CounterStrikeSharp 1.0.381 passed all 31 ability-update checks. The checks covered custom glove suppression and replacement, filtering weapons with nameplates or StatTrak from other viewers, and restoring cosmetics on reveal.

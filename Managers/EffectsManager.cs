@@ -174,7 +174,9 @@ public sealed class EffectsManager
     public void Speed(CCSPlayerPawn pawn, string source, float amount)
     {
         var key=pawn.EntityHandle.Raw;
-        if (!_scalars.TryGetValue(key,out var scalar)) _scalars[key]=scalar=new(pawn.VelocityModifier);
+        // CS2 reduces this value temporarily when the player is tagged by a hit.
+        // Start persistent boosts from at least normal speed so they cannot lock in that slowdown.
+        if (!_scalars.TryGetValue(key,out var scalar)) _scalars[key]=scalar=new(Math.Max(1f,pawn.VelocityModifier));
         scalar.Multipliers[source]=amount;
         WriteSpeed(pawn,scalar.Baseline*scalar.Multiplier);
     }

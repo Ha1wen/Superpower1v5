@@ -57,23 +57,41 @@ public sealed partial class Plugin
             var target=Players.AlivePawn(Ct())!; target.Health=100;
             Damage.Deal(Ct().EntityHandle.Raw,Boss().EntityHandle.Raw,20);
             Require(Pawn().Health==520 && Pawn().MaxHealth==500,$"health={Pawn().Health}");
-            var baseSpeed=Pawn().VelocityModifier;
-            Powers.NativeProbePair("blood_pact","teleport");
-            var opponents=Mode.Opponents.Skip(3).Take(2).ToArray();
-            foreach (var opponent in opponents)
-            {
-                Damage.Deal(opponent.EntityHandle.Raw,Boss().EntityHandle.Raw,500);
-                Require(Players.AlivePawn(opponent) is null,"the test kill did not land");
-            }
-            Require(Math.Abs(Pawn().VelocityModifier-baseSpeed*1.1f)<.01,"Blood Pact did not grant a single ten-percent kill boost");
-            Powers.NativeProbePair("teleport","infinite_ammo");
-            Require(Math.Abs(Pawn().VelocityModifier-baseSpeed)<.01,"Blood Pact speed leaked after cleanup");
             Powers.NativeProbePair("cluster_grenade","blood_pact",player:Ct());
             Ct().RemoveWeapons(); Throw(Ct(),"incgrenade");
             Combo().RemoveWeapons(); Powers.NativeProbePair("infinite_ammo","cluster_grenade",player:Combo());
             Throw(Combo(),"weapon_smokegrenade");
             Replaced().RemoveWeapons(); Powers.NativeProbePair("cluster_grenade","teleport",player:Replaced());
             Throw(Replaced(),"decoy"); Powers.NativeProbePair("teleport","blood_pact",player:Replaced());
+        });
+        UpdateAt(10.2f,"Blood Pact grants one speed boost from normal speed even if the first kill lands while tagged",()=> {
+            var pawn=Pawn();
+            Powers.NativeProbePair("blood_pact","teleport");
+            pawn.VelocityModifier=.45f;
+            var opponents=Mode.Opponents.Skip(3).Take(2).ToArray();
+            foreach (var opponent in opponents)
+            {
+                Damage.Deal(opponent.EntityHandle.Raw,Boss().EntityHandle.Raw,500);
+                Require(Players.AlivePawn(opponent) is null,"the test kill did not land");
+            }
+            Powers.Tick();
+            Require(Math.Abs(pawn.VelocityModifier-1.1f)<.01,$"Blood Pact speed after two kills: {pawn.VelocityModifier}");
+            var speed=Config.Powers["super_speed"];
+            var wasEnabled=speed.Enabled;
+            speed.Enabled=true;
+            try
+            {
+                Powers.Give("super_speed",1);
+                Require(Math.Abs(pawn.VelocityModifier-speed.Strength*1.1f)<.01,"Blood Pact did not stack with Super Speed");
+                Powers.Give("infinite_ammo",0);
+                Require(Math.Abs(pawn.VelocityModifier-speed.Strength)<.01,"Removing Blood Pact affected Super Speed");
+            }
+            finally
+            {
+                Powers.NativeProbePair("teleport","infinite_ammo");
+                speed.Enabled=wasEnabled;
+            }
+            Require(Math.Abs(pawn.VelocityModifier-1f)<.01,"Cleanup restored the temporary tagging slowdown");
         });
         UpdateAt(11,"Decoy uses the owner's model and snapshots the held rifle",()=> {
             Boss().RemoveWeapons();

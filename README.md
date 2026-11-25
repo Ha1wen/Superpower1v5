@@ -2,6 +2,10 @@
 
 A CounterStrikeSharp plugin for CS2 with **24 equally likely powers** and two different powers per loadout. In 1v5, the human who chooses T stays the boss against up to five CT opponents. Native deathmatch gives every active player a new pair on each respawn. Normal health is 100; Juggernaut grants 500.
 
+## v1.9.2 changes
+
+- Blood Pact grants its 10% speed boost even when the first kill comes during a temporary hit slowdown.
+
 ## v1.9.1 changes
 
 - Invisibility suppresses custom gloves, weapon nameplates, and StatTrak displays while the player fades, and restores their appearance on reveal.
@@ -21,7 +25,7 @@ Requires a CS2 dedicated server, Metamod:Source, **CounterStrikeSharp API 1.0.38
 
 Decoy Clone's walking animation uses AnimGraph2 on Windows CS2 build 26879581. On other builds, the decoy still moves, shows the held weapon, and plays footsteps using the standard prop behavior.
 
-Back up the existing plugin and config. Download [Superpower1v5-v1.9.1.zip](releases/Superpower1v5-v1.9.1.zip), stop the server, and extract it into `game/csgo/`, merging `addons/`. The ZIP includes default configuration. Restart the server after installation.
+Back up the existing plugin and config. Download [Superpower1v5-v1.9.2.zip](releases/Superpower1v5-v1.9.2.zip), stop the server, and extract it into `game/csgo/`, merging `addons/`. The ZIP includes default configuration. Restart the server after installation.
 
 To keep an existing config, build from this checkout and use `tools/Deploy.ps1 -MigrateConfig`. The script backs up the config and migrates it to version 11.
 

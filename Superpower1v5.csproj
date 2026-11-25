@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>Superpower1v5</AssemblyName>
-    <Version>1.9.1</Version>
+    <Version>1.9.2</Version>
     <DefaultItemExcludes>$(DefaultItemExcludes);artifacts\**</DefaultItemExcludes>
     <CounterStrikeSharpPath Condition="'$(CounterStrikeSharpPath)' == ''">$(MSBuildThisFileDirectory)..\..\game\csgo\addons\counterstrikesharp\api</CounterStrikeSharpPath>
   </PropertyGroup>
